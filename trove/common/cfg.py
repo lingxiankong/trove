@@ -81,6 +81,10 @@ common_opts = [
                help="The version of the image service client."),
     cfg.BoolOpt('nova_api_insecure', default=False,
                 help="Allow to perform insecure SSL requests to nova."),
+    cfg.StrOpt('nova_keypair', default=None,
+               help="Existing keypair name used to inject ssh keys into the "
+                    "database instance, the keypair should be managed by the "
+                    "cloud admin."),
     cfg.URIOpt('neutron_url', help='URL without the tenant segment.'),
     cfg.StrOpt('neutron_service_type', default='network',
                help='Service type to use when searching catalog.'),
