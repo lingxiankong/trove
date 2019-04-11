@@ -577,6 +577,18 @@ def update_datastore(name, default_version):
     db_api.save(datastore)
 
 
+def delete_datastore_version(datastore, name):
+    db_api.configure_db(CONF)
+    datastore = Datastore.load(datastore)
+    try:
+        version = DBDatastoreVersion.find_by(datastore_id=datastore.id,
+                                             name=name)
+    except exception.ModelNotFoundError:
+        return
+
+    version.delete()
+
+
 def update_datastore_version(datastore, name, manager, image_id, packages,
                              active):
     db_api.configure_db(CONF)

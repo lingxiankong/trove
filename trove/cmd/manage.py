@@ -73,6 +73,13 @@ class Commands(object):
         except exception.DatastoreNotFound as e:
             print(e)
 
+    def datastore_version_delete(self, datastore, version_name):
+        try:
+            datastore_models.delete_datastore_version(datastore, version_name)
+            print("Datastore version '%s' deleted." % version_name)
+        except exception.DatastoreNotFound as e:
+            print(e)
+
     def db_recreate(self, repo_path):
         """Drops the database and recreates it."""
         self.db_api.drop_db(CONF)
@@ -210,6 +217,15 @@ def main():
             'active', type=int,
             help='Whether the datastore version is active or not. '
             'Accepted values are 0 and 1.')
+
+        parser = subparser.add_parser(
+            'datastore_version_delete',
+            description='Delete a datastore version.'
+        )
+        parser.add_argument('datastore', help='Name of the datastore.')
+        parser.add_argument(
+            'version_name', help='Name of the datastore version.'
+        )
 
         parser = subparser.add_parser(
             'db_recreate', description='Drop the database and recreate it.')
