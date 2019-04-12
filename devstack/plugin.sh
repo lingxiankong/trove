@@ -51,8 +51,19 @@ function setup_trove_logging {
 
 function create_trove_accounts {
     if [[ "$ENABLED_SERVICES" =~ "trove" ]]; then
-
         create_service_user "trove"
+
+        # Add trove user to the clouds.yaml
+        CLOUDS_YAML=${CLOUDS_YAML:-/etc/openstack/clouds.yaml}
+        $PYTHON $TOP_DIR/tools/update_clouds_yaml.py \
+            --file $CLOUDS_YAML \
+            --os-cloud trove \
+            --os-region-name $REGION_NAME \
+            $CA_CERT_ARG \
+            --os-auth-url $KEYSTONE_SERVICE_URI \
+            --os-username trove \
+            --os-password $SERVICE_PASSWORD \
+            --os-project-name $SERVICE_PROJECT_NAME
 
         local trove_service=$(get_or_create_service "trove" \
             "database" "Trove Service")
@@ -239,10 +250,18 @@ function configure_trove {
 
         iniset $TROVE_TASKMANAGER_CONF database connection `database_connection_url trove`
         iniset $TROVE_TASKMANAGER_CONF DEFAULT taskmanager_manager trove.taskmanager.manager.Manager
-        iniset $TROVE_TASKMANAGER_CONF DEFAULT nova_proxy_admin_user radmin
-        iniset $TROVE_TASKMANAGER_CONF DEFAULT nova_proxy_admin_tenant_name trove
-        iniset $TROVE_TASKMANAGER_CONF DEFAULT nova_proxy_admin_pass $RADMIN_USER_PASS
+        iniset $TROVE_TASKMANAGER_CONF DEFAULT trove_security_group_name_prefix $TROVE_SECURITY_GROUP_PREFIX
+
         iniset $TROVE_TASKMANAGER_CONF DEFAULT trove_auth_url $TROVE_AUTH_ENDPOINT
+        iniset $TROVE_TASKMANAGER_CONF DEFAULT nova_proxy_admin_user trove
+        iniset $TROVE_TASKMANAGER_CONF DEFAULT nova_proxy_admin_tenant_name $SERVICE_PROJECT_NAME
+        iniset $TROVE_TASKMANAGER_CONF DEFAULT nova_proxy_admin_pass $SERVICE_PASSWORD
+        iniset $TROVE_TASKMANAGER_CONF DEFAULT nova_proxy_admin_user_domain_name default
+        iniset $TROVE_TASKMANAGER_CONF DEFAULT nova_proxy_admin_project_domain_name default
+        iniset $TROVE_TASKMANAGER_CONF DEFAULT os_region_name $REGION_NAME
+        iniset $TROVE_TASKMANAGER_CONF DEFAULT remote_nova_client trove.common.single_tenant_remote.nova_client_trove_admin
+        iniset $TROVE_TASKMANAGER_CONF DEFAULT remote_cinder_clienttrove.common.single_tenant_remote.cinder_client_trove_admin
+        iniset $TROVE_TASKMANAGER_CONF DEFAULT remote_neutron_client trove.common.single_tenant_remote.neutron_client_trove_admin
 
         iniset $TROVE_TASKMANAGER_CONF cassandra tcp_ports 22,7000,7001,7199,9042,9160
         iniset $TROVE_TASKMANAGER_CONF couchbase tcp_ports 22,8091,8092,4369,11209-11211,21100-21199
@@ -329,33 +348,6 @@ function init_trove {
     # Initialize the trove database
     $TROVE_MANAGE db_sync
 
-    # Add an admin user to the 'tempest' alt_demo tenant.
-    # This is needed to test the guest_log functionality.
-    # The first part mimics the tempest setup, so make sure we have that.
-    ALT_USERNAME=${ALT_USERNAME:-alt_demo}
-    ALT_TENANT_NAME=${ALT_TENANT_NAME:-alt_demo}
-    ALT_TENANT_ID=$(get_or_create_project ${ALT_TENANT_NAME} default)
-    get_or_create_user ${ALT_USERNAME} "$ADMIN_PASSWORD" "default" "alt_demo@example.com"
-    get_or_add_user_project_role Member ${ALT_USERNAME} ${ALT_TENANT_NAME}
-
-    # The second part adds an admin user to the tenant.
-    ADMIN_ALT_USERNAME=${ADMIN_ALT_USERNAME:-admin_${ALT_USERNAME}}
-    get_or_create_user ${ADMIN_ALT_USERNAME} "$ADMIN_PASSWORD" "default" "admin_alt_demo@example.com"
-    get_or_add_user_project_role admin ${ADMIN_ALT_USERNAME} ${ALT_TENANT_NAME}
-    # Now add these credentials to the clouds.yaml file
-    ADMIN_ALT_DEMO_CLOUD=devstack-alt-admin
-    CLOUDS_YAML=${CLOUDS_YAML:-/etc/openstack/clouds.yaml}
-    $TOP_DIR/tools/update_clouds_yaml.py \
-        --file ${CLOUDS_YAML} \
-        --os-cloud ${ADMIN_ALT_DEMO_CLOUD} \
-        --os-region-name ${REGION_NAME} \
-        --os-identity-api-version 3 \
-        ${CA_CERT_ARG} \
-        --os-auth-url ${KEYSTONE_AUTH_URI} \
-        --os-username ${ADMIN_ALT_USERNAME} \
-        --os-password ${ADMIN_PASSWORD} \
-        --os-project-name ${ALT_TENANT_NAME}
-
     # build and upload sample Trove mysql instance if not set otherwise
     TROVE_DISABLE_IMAGE_SETUP=`echo ${TROVE_DISABLE_IMAGE_SETUP} | tr '[:upper:]' '[:lower:]'`
     if [[ ${TROVE_DISABLE_IMAGE_SETUP} != "true" ]]; then
@@ -399,44 +391,28 @@ function init_trove {
     fi
 }
 
-# Create private IPv4 subnet
-# Note: This was taken from devstack:lib/neutron_plugins/services/l3 and will need to be maintained
-function _create_private_subnet_v4 {
-    local project_id=$1
+function _create_subnet_v4 {
+    local os_cloud_user=${1:-"devstack-admin"}
     local net_id=$2
-    local name=${3:-$PRIVATE_SUBNET_NAME}
-    local os_cloud=${4:-devstack-admin}
+    local name=$3
+    local ip_range=$4
 
-    local subnet_params="--project $project_id "
-    subnet_params+="--ip-version 4 "
-    if [[ -n "$NETWORK_GATEWAY" ]]; then
-        subnet_params+="--gateway $NETWORK_GATEWAY "
-    fi
-    if [ -n "$SUBNETPOOL_V4_ID" ]; then
-        subnet_params+="--subnet-pool $SUBNETPOOL_V4_ID "
-    else
-        subnet_params+="--subnet-range $FIXED_RANGE "
-    fi
-    subnet_params+="--network $net_id $name"
-    local subnet_id
-    subnet_id=$(openstack --os-cloud $os_cloud --os-region "$REGION_NAME" subnet create $subnet_params | grep ' id ' | get_field 2)
-    die_if_not_set $LINENO subnet_id "Failure creating private IPv4 subnet for $project_id"
+    subnet_id=$(openstack --os-cloud ${os_cloud_user} --os-region $REGION_NAME subnet create --ip-version 4 --subnet-range ${ip_range} --network $net_id $name | grep ' id ' | get_field 2)
+    die_if_not_set $LINENO subnet_id "Failed to create private IPv4 subnet for network: ${net_id}, user: ${os_cloud_user}"
     echo $subnet_id
 }
 
-# Create private IPv6 subnet
-# Note: This was taken from devstack:lib/neutron_plugins/services/l3 and will need to be maintained
-function _create_private_subnet_v6 {
-    local project_id=$1
+# Trove is not fully tested in IPv6.
+function _create_subnet_v6 {
+    local os_cloud_user=${1:-"devstack-admin"}
     local net_id=$2
-    local name=${3:-$IPV6_PRIVATE_SUBNET_NAME}
-    local os_cloud=${4:-devstack-admin}
+    local name=$3
+    local subnet_params="--ip-version 6 "
 
     die_if_not_set $LINENO IPV6_RA_MODE "IPV6 RA Mode not set"
     die_if_not_set $LINENO IPV6_ADDRESS_MODE "IPV6 Address Mode not set"
     local ipv6_modes="--ipv6-ra-mode $IPV6_RA_MODE --ipv6-address-mode $IPV6_ADDRESS_MODE"
-    local subnet_params="--project $project_id "
-    subnet_params+="--ip-version 6 "
+
     if [[ -n "$IPV6_PRIVATE_NETWORK_GATEWAY" ]]; then
         subnet_params+="--gateway $IPV6_PRIVATE_NETWORK_GATEWAY "
     fi
@@ -446,42 +422,39 @@ function _create_private_subnet_v6 {
         subnet_params+="--subnet-range $FIXED_RANGE_V6 $ipv6_modes} "
     fi
     subnet_params+="--network $net_id $name "
-    local ipv6_subnet_id
-    ipv6_subnet_id=$(openstack --os-cloud $os_cloud --os-region "$REGION_NAME" subnet create $subnet_params | grep ' id ' | get_field 2)
-    die_if_not_set $LINENO ipv6_subnet_id "Failure creating private IPv6 subnet for $project_id"
+
+    ipv6_subnet_id=$(openstack --os-cloud ${os_cloud_user} --os-region $REGION_NAME subnet create $subnet_params | grep ' id ' | get_field 2)
+    die_if_not_set $LINENO ipv6_subnet_id "Failed to create private IPv6 subnet for network: ${net_id}, user: ${os_cloud_user}"
     echo $ipv6_subnet_id
 }
 
-# Set up a network on the alt_demo tenant.  Requires ROUTER_ID, REGION_NAME and IP_VERSION to be set
-function set_up_network() {
+function set_up_mgmt_network() {
     local CLOUD_USER=$1
-    local PROJECT_ID=$2
-    local NET_NAME=$3
-    local SUBNET_NAME=$4
-    local IPV6_SUBNET_NAME=$5
-    local SHARED=$6
+    local NET_NAME=$2
+    local SUBNET_NAME=$3
+    local IPV6_SUBNET_NAME=$4
+    local SHARED=$5
 
     local share_flag=""
     if [[ "${SHARED}" == "TRUE" ]]; then
         share_flag="--share"
     fi
 
-    NEW_NET_ID=$(openstack --os-cloud ${CLOUD_USER} --os-region "$REGION_NAME" network create --project ${PROJECT_ID} ${share_flag} "$NET_NAME" | grep ' id ' | get_field 2)
+    NEW_NET_ID=$(openstack --os-cloud ${CLOUD_USER} --os-region $REGION_NAME network create ${share_flag} $NET_NAME | grep ' id ' | get_field 2)
     if [[ "$IP_VERSION" =~ 4.* ]]; then
-        NEW_SUBNET_ID=$(_create_private_subnet_v4 ${PROJECT_ID} ${NEW_NET_ID} ${SUBNET_NAME} ${CLOUD_USER})
+        NEW_SUBNET_ID=$(_create_subnet_v4 ${CLOUD_USER} ${NEW_NET_ID} ${SUBNET_NAME} ${TROVE_MGMT_SUBNET_RANGE})
         openstack --os-cloud ${CLOUD_USER} --os-region "$REGION_NAME" router add subnet $ROUTER_ID $NEW_SUBNET_ID
     fi
     if [[ "$IP_VERSION" =~ .*6 ]]; then
-        NEW_IPV6_SUBNET_ID=$(_create_private_subnet_v6 ${PROJECT_ID} ${NEW_NET_ID} ${IPV6_SUBNET_NAME} ${CLOUD_USER})
+        NEW_IPV6_SUBNET_ID=$(_create_subnet_v6 ${CLOUD_USER} ${NEW_NET_ID} ${IPV6_SUBNET_NAME})
         openstack --os-cloud ${CLOUD_USER} --os-region "$REGION_NAME" router add subnet $ROUTER_ID $NEW_IPV6_SUBNET_ID
     fi
 
     echo $NEW_NET_ID
 }
 
-# finalize_trove_network() - do the last thing(s) before starting Trove
+# Set up trove management network and make configuration change.
 function finalize_trove_network {
-
     echo "Finalizing Neutron networking for Trove"
     echo "Dumping current network parameters:"
     echo "  SERVICE_HOST: $SERVICE_HOST"
@@ -496,48 +469,28 @@ function finalize_trove_network {
     echo "  SUBNETPOOL_SIZE_V4: $SUBNETPOOL_SIZE_V4"
     echo "  SUBNETPOOL_V4_ID: $SUBNETPOOL_V4_ID"
     echo "  ROUTER_GW_IP: $ROUTER_GW_IP"
+    echo "  TROVE_MGMT_SUBNET_RANGE: ${TROVE_MGMT_SUBNET_RANGE}"
 
-    # Create the net/subnet for the alt_demo tenant so the int-tests have a proper network
-    echo "Creating network/subnets for ${ALT_TENANT_NAME} project"
-    ALT_PRIVATE_NETWORK_NAME=${TROVE_PRIVATE_NETWORK_NAME}
-    ALT_PRIVATE_SUBNET_NAME=${TROVE_PRIVATE_SUBNET_NAME}
-    ALT_PRIVATE_IPV6_SUBNET_NAME=ipv6-${ALT_PRIVATE_SUBNET_NAME}
-    ALT_NET_ID=$(set_up_network $ADMIN_ALT_DEMO_CLOUD $ALT_TENANT_ID $ALT_PRIVATE_NETWORK_NAME $ALT_PRIVATE_SUBNET_NAME $ALT_PRIVATE_IPV6_SUBNET_NAME $TROVE_SHARE_NETWORKS)
-    echo "Created network ${ALT_PRIVATE_NETWORK_NAME} (${ALT_NET_ID})"
+    # Create network and subnet for admin project.
+    echo "Creating Trove management network/subnets"
+    mgmt_net_id=$(set_up_mgmt_network "trove" ${TROVE_MGMT_NETWORK_NAME} ${TROVE_MGMT_SUBNET_NAME})
+    echo "Created Trove management network ${TROVE_MGMT_NETWORK_NAME} (${mgmt_net_id})"
 
-    # Set up a management network to test that functionality
-    ALT_MGMT_NETWORK_NAME=trove-mgmt
-    ALT_MGMT_SUBNET_NAME=${ALT_MGMT_NETWORK_NAME}-subnet
-    ALT_MGMT_IPV6_SUBNET_NAME=ipv6-${ALT_MGMT_SUBNET_NAME}
-    ALT_MGMT_ID=$(set_up_network $ADMIN_ALT_DEMO_CLOUD $ALT_TENANT_ID $ALT_MGMT_NETWORK_NAME $ALT_MGMT_SUBNET_NAME $ALT_MGMT_IPV6_SUBNET_NAME $TROVE_SHARE_NETWORKS)
-    echo "Created network ${ALT_MGMT_NETWORK_NAME} (${ALT_MGMT_ID})"
-
-    # Make sure we can reach the VMs
-    local replace_range=${SUBNETPOOL_PREFIX_V4}
-    if [[ -z "${SUBNETPOOL_V4_ID}" ]]; then
-        replace_range=${FIXED_RANGE}
-    fi
-    sudo ip route replace $replace_range via $ROUTER_GW_IP
+    # Make sure we can reach the service VMs
+    sudo ip route replace ${TROVE_MGMT_SUBNET_RANGE} via $ROUTER_GW_IP
 
     echo "Neutron network list:"
     openstack --os-cloud devstack-admin --os-region "$REGION_NAME" network list
+    echo "Neutron subnet list:"
+    openstack --os-cloud devstack-admin --os-region "$REGION_NAME" subnet list
 
-    # Now make sure the conf settings are right
-    iniset $TROVE_CONF DEFAULT network_label_regex "${ALT_PRIVATE_NETWORK_NAME}"
-    iniset $TROVE_CONF DEFAULT ip_regex ""
-    iniset $TROVE_CONF DEFAULT black_list_regex ""
-    # Don't use a default network for now, until the neutron issues are figured out
-    #iniset $TROVE_CONF DEFAULT management_networks "${ALT_MGMT_ID}"
-    iniset $TROVE_CONF DEFAULT management_networks ""
-    iniset $TROVE_CONF DEFAULT network_driver trove.network.neutron.NeutronDriver
-
-    iniset $TROVE_TASKMANAGER_CONF DEFAULT network_label_regex "${ALT_PRIVATE_NETWORK_NAME}"
-    iniset $TROVE_TASKMANAGER_CONF DEFAULT ip_regex ""
-    iniset $TROVE_TASKMANAGER_CONF DEFAULT black_list_regex ""
-    # Don't use a default network for now, until the neutron issues are figured out
-    #iniset $TROVE_TASKMANAGER_CONF DEFAULT management_networks "${ALT_MGMT_ID}"
-    iniset $TROVE_CONF DEFAULT management_networks ""
-    iniset $TROVE_TASKMANAGER_CONF DEFAULT network_driver trove.network.neutron.NeutronDriver
+    for configfile in "$TROVE_CONF" "$TROVE_TASKMANAGER_CONF"; do
+        iniset $configfile DEFAULT network_label_regex "${TROVE_MGMT_NETWORK_NAME}"
+        iniset $configfile DEFAULT ip_regex ""
+        iniset $configfile DEFAULT black_list_regex ""
+        iniset $configfile DEFAULT management_networks "${mgmt_net_id}"
+        iniset $configfile DEFAULT network_driver trove.network.neutron.NeutronDriver
+    done
 }
 
 # start_trove() - Start running processes, including screen
@@ -632,7 +585,7 @@ function _setup_minimal_image {
 
     export TROVE_GUESTAGENT_CONF=${TROVE_GUESTAGENT_CONF:-'/etc/trove/trove-guestagent.conf'}
 
-    if [ -d ${SSH_DIR} ]; then
+    if [[ -d ${SSH_DIR} && -f ${SSH_DIR}/id_rsa.pub ]]; then
         cat ${SSH_DIR}/id_rsa.pub >> ${SSH_DIR}/authorized_keys
         sort ${SSH_DIR}/authorized_keys | uniq > ${SSH_DIR}/authorized_keys.uniq
         mv ${SSH_DIR}/authorized_keys.uniq ${SSH_DIR}/authorized_keys
