@@ -18,6 +18,7 @@ import collections
 import inspect
 import os
 import shutil
+import subprocess
 import uuid
 
 from eventlet.timeout import Timeout
@@ -209,7 +210,7 @@ def wait_for_task(polling_task):
 
 
 def poll_until(retriever, condition=lambda value: value,
-               sleep_time=1, time_out=0):
+               sleep_time=3, time_out=0):
     """Retrieves object until it passes condition, then returns it.
 
     If time_out_limit is passed in, PollTimeOut will be raised once that
@@ -421,3 +422,23 @@ def req_to_text(req):
         parts.extend([b'', safe_encode(req.body)])
 
     return b'\r\n'.join(parts).decode(req.charset)
+
+
+def get_default_nic_ipv4_address(namespace="datastore"):
+    """Get IP address of the default network device.
+
+    'pyroute2' module needs root permission so that cannot be used in a process
+    that is running as normal user, e.g. trove-guestagent
+
+    Exception needs to be handled outside.
+    """
+    get_nic_cmd = 'sudo ip netns exec %s ip route | grep default | sed -e ' \
+                  '"s/^.*dev.//"' % namespace
+    nic = subprocess.getoutput(get_nic_cmd)
+    nic = nic.strip()
+
+    get_ip_cmd = r"sudo ip netns exec %s ip addr show %s | grep 'inet\b' | " \
+                 r"awk '{print $2}' | cut -d/ -f1" % (namespace, nic)
+    ip = subprocess.getoutput(get_ip_cmd)
+
+    return ip.strip()

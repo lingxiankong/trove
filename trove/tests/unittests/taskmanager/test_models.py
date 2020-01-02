@@ -427,7 +427,7 @@ class FreshInstanceTasksTest(BaseFreshInstanceTasksTest):
             mock_flavor, 'mysql-image-id', None,
             None, 'mysql', 'mysql-server',
             2, None, None,
-            None, [{'net-id': 'fake-net-uuid'}, {'net-id': 'fake-mgmt-uuid'}],
+            None, [{'net-id': 'fake-mgmt-uuid'}, {'net-id': 'fake-net-uuid'}],
             mock.ANY,
             None, None, 'volume_type',
             None, {'group': 'sg-id'},
@@ -445,8 +445,8 @@ class FreshInstanceTasksTest(BaseFreshInstanceTasksTest):
             8, 'mysql-image-id', 'mysql',
             mock_build_volume_info()['block_device'], None,
             [
-                {'port-id': 'fake-user-port-id'},
-                {'port-id': 'fake-mgmt-port-id'}
+                {'port-id': 'fake-mgmt-port-id'},
+                {'port-id': 'fake-user-port-id'}
             ],
             mock_get_injected_files(), {'group': 'sg-id'}
         )
@@ -857,19 +857,6 @@ class BuiltInstanceTasksTest(trove_testtools.TestCase):
         self.instance_task._guest.stop_db.assert_any_call()
         self.instance_task.server.reboot.assert_any_call()
         self.instance_task.set_datastore_status_to_paused.assert_any_call()
-
-    @patch.object(utils, 'poll_until')
-    @patch('trove.taskmanager.models.LOG')
-    def test_reboot_datastore_not_ready(self, mock_logging, mock_poll):
-        mock_poll.side_effect = PollTimeOut
-        self.instance_task.server.reboot = Mock()
-        self.instance_task.set_datastore_status_to_paused = Mock()
-
-        self.instance_task.reboot()
-
-        self.instance_task._guest.stop_db.assert_any_call()
-        assert not self.instance_task.server.reboot.called
-        assert not self.instance_task.set_datastore_status_to_paused.called
 
     @patch.object(BaseInstance, 'update_db')
     def test_detach_replica(self, mock_update_db):

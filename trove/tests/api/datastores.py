@@ -28,15 +28,12 @@ from trove.tests.util import create_dbaas_client
 from trove.tests.util import test_config
 from trove.tests.util.users import Requirements
 
-
-GROUP = "dbaas.api.datastores"
 NAME = "nonexistent"
 
 
-@test(groups=[tests.DBAAS_API, GROUP, tests.PRE_INSTANCES],
-      depends_on_groups=["services.initialize"])
+@test(groups=[tests.DBAAS_API_DATASTORES],
+      depends_on_groups=[tests.DBAAS_API_VERSIONS])
 class Datastores(object):
-
     @before_class
     def setUp(self):
         rd_user = test_config.users.find_user(
@@ -101,10 +98,8 @@ class Datastores(object):
         assert_true(name_no_versions in name_list)
 
 
-@test(groups=[tests.DBAAS_API, GROUP, tests.PRE_INSTANCES],
-      depends_on_groups=["services.initialize"])
+@test(groups=[tests.DBAAS_API_DATASTORES])
 class DatastoreVersions(object):
-
     @before_class
     def setUp(self):
         rd_user = test_config.users.find_user(
