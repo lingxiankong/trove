@@ -66,11 +66,14 @@ function build_vm() {
         elementes="$elementes pip-cache"
         elementes="$elementes guest-agent"
     else
+        # Install guest agent dependencies, user, etc.
         elementes="$elementes ${guest_os}-guest"
+        # Install guest agent service
         elementes="$elementes ${guest_os}-${guest_release}-guest"
     fi
 
     elementes="$elementes ${guest_os}-${datastore_type}"
+    elementes="$elementes ${guest_os}-${guest_release}-common"
     elementes="$elementes ${guest_os}-${guest_release}-${datastore_type}"
 
     # Build the image

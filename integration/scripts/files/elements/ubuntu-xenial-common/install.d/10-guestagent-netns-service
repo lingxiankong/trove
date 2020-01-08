@@ -1,0 +1,33 @@
+#!/bin/bash
+
+# guestagent-netns.service is used to initialized the network namespace and move
+# the management network device(usually the last one) into the namespace.
+
+cat <<EOF > /etc/systemd/system/guestagent-netns.service
+[Unit]
+Description=Configure Trove Guest Agent network namespace
+StopWhenUnneeded=true
+After=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+
+# Re-add the namespace
+ExecStart=-/sbin/ip netns add guestagent
+
+# Move the first network device into the namespace
+ExecStart=-/sbin/ip link set ens3 netns guestagent
+
+# Bring up all of the namespace interfaces
+ExecStart=-/sbin/ip netns exec guestagent ifdown ens3
+ExecStart=-/sbin/ip netns exec guestagent ip link set ens3 up
+ExecStart=-/sbin/ip netns exec guestagent ip addr flush ens3
+ExecStart=-/sbin/ip netns exec guestagent ifup ens3
+
+# Bring up the first device
+ExecStart=-/sbin/ifup ens2 --force
+
+# Start the ssh server in the namespace
+ExecStart=-/sbin/ip netns exec guestagent /usr/sbin/sshd -o PidFile=/run/sshd-ns.pid
+EOF
