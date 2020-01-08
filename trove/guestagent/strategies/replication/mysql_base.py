@@ -18,7 +18,6 @@ import abc
 import uuid
 
 from oslo_log import log as logging
-from oslo_utils import netutils
 
 from trove.common import cfg
 from trove.common.db.mysql import models
@@ -55,7 +54,7 @@ class MysqlReplicationBase(base.Replication):
 
     def get_master_ref(self, service, snapshot_info):
         master_ref = {
-            'host': netutils.get_my_ipv4(),
+            'host': utils.get_default_nic_ipv4_address(),
             'port': service.get_port()
         }
         return master_ref

@@ -1,0 +1,30 @@
+#!/bin/bash
+
+# datastore-netns service is used to initialized the network namespace and move
+# the user-defined device(usually the second one) into the namespace.
+
+cat <<EOF > /etc/systemd/system/datastore-netns.service
+[Unit]
+Description=Configure datastore network namespace
+StopWhenUnneeded=true
+After=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+
+# Re-add the namespace
+ExecStart=-/sbin/ip netns add datastore
+
+# Move the first network device into the namespace
+ExecStart=-/sbin/ip link set ens3 netns datastore
+
+# Bring up all of the namespace interfaces
+ExecStart=-/sbin/ip netns exec datastore ifdown ens3
+ExecStart=-/sbin/ip netns exec datastore ip link set ens3 up
+ExecStart=-/sbin/ip netns exec datastore ip addr flush ens3
+ExecStart=-/sbin/ip netns exec datastore ifup ens3
+
+# Bring up the first device
+ExecStart=-/sbin/ifup ens2 --force
+EOF

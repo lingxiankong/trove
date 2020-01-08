@@ -15,7 +15,6 @@
 
 from proboscis import test
 
-from trove.tests import PRE_INSTANCES
 from trove.tests.scenario import groups
 from trove.tests.scenario.groups.test_group import TestGroup
 from trove.tests.scenario.runners import test_runners
@@ -30,8 +29,7 @@ class InstanceErrorCreateRunnerFactory(test_runners.RunnerFactory):
     _runner_cls = 'InstanceErrorCreateRunner'
 
 
-@test(depends_on_groups=["services.initialize"],
-      runs_after_groups=[PRE_INSTANCES, groups.INST_CREATE],
+@test(runs_after_groups=[groups.INST_CREATE],
       groups=[GROUP, groups.INST_ERROR_CREATE])
 class InstanceErrorCreateGroup(TestGroup):
     """Test Instance Error Create functionality."""
