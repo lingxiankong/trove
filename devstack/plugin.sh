@@ -400,8 +400,9 @@ function setup_mgmt_network() {
     die_if_not_set $LINENO network_id "Failed to create network: $NET_NAME, project: ${PROJECT_ID}"
 
     if [[ "$IP_VERSION" =~ 4.* ]]; then
-        NEW_SUBNET_ID=$(create_mgmt_subnet_v4 ${PROJECT_ID} ${network_id} ${SUBNET_NAME} ${SUBNET_RANGE})
-        openstack router add subnet $ROUTER_ID $NEW_SUBNET_ID
+        net_subnet_id=$(create_mgmt_subnet_v4 ${PROJECT_ID} ${network_id} ${SUBNET_NAME} ${SUBNET_RANGE})
+        # 'openstack router add' has a bug that cound't show the error message
+        openstack router add subnet ${ROUTER_ID} ${net_subnet_id} --debug
     fi
     # Trove doesn't support IPv6 for now.
 #    if [[ "$IP_VERSION" =~ .*6 ]]; then
@@ -464,15 +465,12 @@ function create_guest_image {
       ${TROVE_IMAGE_OS_RELEASE} \
       true
 
-    image_name="trove-${TROVE_IMAGE_OS}-${TROVE_IMAGE_OS_RELEASE}-${TROVE_DATASTORE_TYPE}"
+    image_name="trove-datastore-${TROVE_IMAGE_OS}-${TROVE_IMAGE_OS_RELEASE}-${TROVE_DATASTORE_TYPE}"
     image_file=$HOME/images/${image_name}.qcow2
     if [ ! -f ${image_file} ]; then
-        echo "Image file was not found at ${image_file}. Probably it was not created."
+        echo "Image file was not found at ${image_file}"
         return 1
     fi
-
-    ACTIVE=1
-    INACTIVE=0
 
     echo "Add the image to glance"
     glance_image_id=$(openstack --os-region-name RegionOne --os-password ${SERVICE_PASSWORD} \
@@ -483,12 +481,8 @@ function create_guest_image {
 
     echo "Register the image in datastore"
     $TROVE_MANAGE datastore_update $TROVE_DATASTORE_TYPE ""
-    $TROVE_MANAGE datastore_version_update $TROVE_DATASTORE_TYPE $TROVE_DATASTORE_VERSION $TROVE_DATASTORE_TYPE $glance_image_id "" $ACTIVE
+    $TROVE_MANAGE datastore_version_update $TROVE_DATASTORE_TYPE $TROVE_DATASTORE_VERSION $TROVE_DATASTORE_TYPE $glance_image_id "" 1
     $TROVE_MANAGE datastore_update $TROVE_DATASTORE_TYPE $TROVE_DATASTORE_VERSION
-
-    # just for tests
-    $TROVE_MANAGE datastore_version_update "$TROVE_DATASTORE_TYPE" "inactive_version" "manager1" $glance_image_id "" $INACTIVE
-    $TROVE_MANAGE datastore_update Test_Datastore_1 ""
 
     echo "Add parameter validation rules if available"
     if [ -f $DEST/trove/trove/templates/$TROVE_DATASTORE_TYPE/validation-rules.json ]; then
@@ -556,6 +550,8 @@ function config_trove_network {
     openstack network list
     echo "Neutron subnet list:"
     openstack subnet list
+    echo "Neutron router:"
+    openstack router show ${ROUTER_ID} -f yaml
     echo "ip route:"
     sudo ip route
 

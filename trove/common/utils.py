@@ -209,7 +209,7 @@ def wait_for_task(polling_task):
 
 
 def poll_until(retriever, condition=lambda value: value,
-               sleep_time=1, time_out=0):
+               sleep_time=3, time_out=0):
     """Retrieves object until it passes condition, then returns it.
 
     If time_out_limit is passed in, PollTimeOut will be raised once that

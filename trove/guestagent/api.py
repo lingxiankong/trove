@@ -415,7 +415,7 @@ class API(object):
                   "on the Guest.")
         version = self.API_BASE_VERSION
 
-        self._call("stop_db", self.agent_high_timeout,
+        self._call("stop_db", self.agent_low_timeout,
                    version=version,
                    do_not_start_on_reboot=do_not_start_on_reboot)
 

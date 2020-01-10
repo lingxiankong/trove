@@ -34,5 +34,6 @@ EOF
 
 chown mysql:mysql /etc/mysql/my.cnf
 rm -f /etc/init.d/mysql
+
 systemctl daemon-reload
 systemctl enable mariadb
