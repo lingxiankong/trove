@@ -53,20 +53,17 @@ class BaseDbStatus(object):
     reflects the actual status of the DB app.
 
     This is a base class, subclasses must implement real logic for
-    determining current status of DB in _get_actual_db_status()
+    determining current status of DB in get_actual_db_status()
     """
-
-    _instance = None
 
     GUESTAGENT_DIR = '~'
     PREPARE_START_FILENAME = '.guestagent.prepare.start'
     PREPARE_END_FILENAME = '.guestagent.prepare.end'
 
-    def __init__(self):
-        if self._instance is not None:
-            raise RuntimeError(_("Cannot instantiate twice."))
+    def __init__(self, docker_client):
         self.status = None
         self.restart_mode = False
+        self.docker_client = docker_client
 
         self.__prepare_completed = None
 
@@ -134,11 +131,11 @@ class BaseDbStatus(object):
         """Called after DB is installed or restarted.
         Updates the database with the actual DB server status.
         """
-        real_status = self._get_actual_db_status()
+        real_status = self.get_actual_db_status()
         LOG.info("Current database status is '%s'.", real_status)
         self.set_status(real_status, force=force)
 
-    def _get_actual_db_status(self):
+    def get_actual_db_status(self):
         raise NotImplementedError()
 
     @property
@@ -181,7 +178,7 @@ class BaseDbStatus(object):
         The database is updated and the status is also returned.
         """
         if self.is_installed and not self._is_restarting:
-            status = self._get_actual_db_status()
+            status = self.get_actual_db_status()
             self.set_status(status)
 
     def restart_db_service(self, service_candidates, timeout):
@@ -344,7 +341,7 @@ class BaseDbStatus(object):
         loop = True
 
         while loop:
-            self.status = self._get_actual_db_status()
+            self.status = self.get_actual_db_status()
             if self.status == status:
                 if update_db:
                     self.set_status(self.status)

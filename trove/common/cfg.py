@@ -186,8 +186,9 @@ common_opts = [
                     'commands to complete.'),
     # The guest_id opt definition must match the one in cmd/guest.py
     cfg.StrOpt('guest_id', default=None, help="ID of the Guest Instance."),
-    cfg.IntOpt('state_change_wait_time', default=60 * 10,
-               help='Maximum time (in seconds) to wait for a state change.'),
+    cfg.IntOpt('state_change_wait_time', default=30,
+               help='Maximum time (in seconds) to wait for database state '
+                    'change.'),
     cfg.IntOpt('state_change_poll_time', default=3,
                help='Interval between state change poll requests (seconds).'),
     cfg.IntOpt('agent_heartbeat_time', default=10,
@@ -466,6 +467,10 @@ common_opts = [
                help='Key (OpenSSL aes_cbc) to encrypt instance keys in DB.'),
     cfg.StrOpt('instance_rpc_encr_key',
                help='Key (OpenSSL aes_cbc) for instance RPC encryption.'),
+    cfg.StrOpt('database_service_uid', default='5000',
+               help='The UID(GID) of the database process user. The user must '
+                    'be created before database running. Guest agent should '
+                    'take care of that.'),
 ]
 
 

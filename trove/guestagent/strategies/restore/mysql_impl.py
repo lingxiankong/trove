@@ -31,6 +31,7 @@ import trove.guestagent.datastore.mysql.service as dbaas
 from trove.guestagent.strategies.restore import base
 
 LOG = logging.getLogger(__name__)
+CONF = cfg.CONF
 
 
 class MySQLRestoreMixin(object):
@@ -223,7 +224,9 @@ class InnoBackupEx(base.RestoreRunner, MySQLRestoreMixin):
 
     def post_restore(self):
         self._run_prepare()
-        operating_system.chown(self.restore_location, 'mysql', None,
+        operating_system.chown(self.restore_location,
+                               CONF.database_service_uid,
+                               CONF.database_service_uid,
                                force=True, as_root=True)
         self._delete_old_binlogs()
         self.reset_root_password()

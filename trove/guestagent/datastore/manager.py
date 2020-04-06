@@ -18,26 +18,25 @@ import abc
 import operator
 import os
 
+import docker
 from oslo_config import cfg as oslo_cfg
 from oslo_log import log as logging
 from oslo_service import periodic_task
-from oslo_utils import encodeutils
 
 from trove.common import cfg
 from trove.common import exception
-from trove.common.i18n import _
 from trove.common import instance
+from trove.common.i18n import _
 from trove.common.notification import EndNotification
+from trove.guestagent import dbaas
+from trove.guestagent import guest_log
+from trove.guestagent import volume
 from trove.guestagent.common import guestagent_utils
 from trove.guestagent.common import operating_system
 from trove.guestagent.common.operating_system import FileMode
-from trove.guestagent import dbaas
-from trove.guestagent import guest_log
 from trove.guestagent.module import driver_manager
 from trove.guestagent.module import module_manager
 from trove.guestagent.strategies import replication as repl_strategy
-from trove.guestagent import volume
-
 
 LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
@@ -65,6 +64,9 @@ class Manager(periodic_task.PeriodicTasks):
     GUEST_LOG_DEFS_SLOW_QUERY_LABEL = 'slow_query'
 
     MODULE_APPLY_TO_ALL = module_manager.ModuleManager.MODULE_APPLY_TO_ALL
+
+    docker_client = docker.from_env()
+    docker_image = ""
 
     def __init__(self, manager_name):
         super(Manager, self).__init__(CONF)
@@ -127,43 +129,12 @@ class Manager(periodic_task.PeriodicTasks):
 
         return None
 
-    @abc.abstractproperty
-    def status(self):
-        """This should return an instance of a status class that has been
-        inherited from datastore.service.BaseDbStatus.  Each datastore
-        must implement this property.
-        """
-        return None
-
     @property
     def configuration_manager(self):
         """If the datastore supports the new-style configuration manager,
         it should override this to return it.
         """
         return None
-
-    def get_datastore_log_defs(self):
-        """Any datastore-specific log files should be overridden in this dict
-        by the corresponding Manager class.
-
-        Format of a dict entry:
-
-        'name_of_log': {self.GUEST_LOG_TYPE_LABEL:
-                            Specified by the Enum in guest_log.LogType,
-                        self.GUEST_LOG_USER_LABEL:
-                            User that owns the file,
-                        self.GUEST_LOG_FILE_LABEL:
-                            Path on filesystem where the log resides,
-                        self.GUEST_LOG_SECTION_LABEL:
-                            Section where to put config (if ini style)
-                        self.GUEST_LOG_ENABLE_LABEL: {
-                            Dict of config_group settings to enable log},
-                        self.GUEST_LOG_DISABLE_LABEL: {
-                            Dict of config_group settings to disable log},
-
-        See guestagent_log_defs for an example.
-        """
-        return {}
 
     @property
     def guestagent_log_defs(self):
@@ -181,13 +152,6 @@ class Manager(periodic_task.PeriodicTasks):
             },
         }
 
-    def get_guest_log_defs(self):
-        """Return all the guest log defs."""
-        if not self._guest_log_defs:
-            self._guest_log_defs = dict(self.get_datastore_log_defs())
-            self._guest_log_defs.update(self.guestagent_log_defs)
-        return self._guest_log_defs
-
     @property
     def guest_log_context(self):
         return self._guest_log_context
@@ -195,51 +159,6 @@ class Manager(periodic_task.PeriodicTasks):
     @guest_log_context.setter
     def guest_log_context(self, context):
         self._guest_log_context = context
-
-    def get_guest_log_cache(self):
-        """Make sure the guest_log_cache is loaded and return it."""
-        self._refresh_guest_log_cache()
-        return self._guest_log_cache
-
-    def _refresh_guest_log_cache(self):
-        if self._guest_log_cache:
-            # Replace the context if it's changed
-            if self._guest_log_loaded_context != self.guest_log_context:
-                for log_name in self._guest_log_cache.keys():
-                    self._guest_log_cache[log_name].context = (
-                        self.guest_log_context)
-        else:
-            # Load the initial cache
-            self._guest_log_cache = {}
-            if self.guest_log_context:
-                gl_defs = self.get_guest_log_defs()
-                try:
-                    exposed_logs = CONF.get(self.manager).get(
-                        'guest_log_exposed_logs')
-                except oslo_cfg.NoSuchOptError:
-                    exposed_logs = ''
-                LOG.debug("Available log defs: %s", ",".join(gl_defs.keys()))
-                exposed_logs = exposed_logs.lower().replace(',', ' ').split()
-                LOG.debug("Exposing log defs: %s", ",".join(exposed_logs))
-                expose_all = 'all' in exposed_logs
-                for log_name in gl_defs.keys():
-                    gl_def = gl_defs[log_name]
-                    exposed = expose_all or log_name in exposed_logs
-                    LOG.debug("Building guest log '%(name)s' from def: %(def)s"
-                              " (exposed: %(exposed)s)",
-                              {'name': log_name, 'def': gl_def,
-                               'exposed': exposed})
-                    self._guest_log_cache[log_name] = guest_log.GuestLog(
-                        self.guest_log_context, log_name,
-                        gl_def[self.GUEST_LOG_TYPE_LABEL],
-                        gl_def[self.GUEST_LOG_USER_LABEL],
-                        gl_def[self.GUEST_LOG_FILE_LABEL],
-                        exposed)
-
-        self._guest_log_loaded_context = self.guest_log_context
-
-    def get_service_status(self):
-        return self.status._get_actual_db_status()
 
     @periodic_task.periodic_task
     def update_status(self, context):
@@ -253,6 +172,9 @@ class Manager(periodic_task.PeriodicTasks):
 
         status = self.get_service_status()
         self.status.set_status(status)
+
+    def get_service_status(self):
+        return self.status.get_actual_db_status()
 
     def rpc_ping(self, context):
         LOG.debug("Responding to RPC ping.")
@@ -286,14 +208,9 @@ class Manager(periodic_task.PeriodicTasks):
                             users, device_path, mount_point, backup_info,
                             config_contents, root_password, overrides,
                             cluster_config, snapshot)
-            if overrides:
-                LOG.info("Applying user-specified configuration "
-                         "(called from 'prepare').")
-                self.apply_overrides_on_prepare(context, overrides)
         except Exception as ex:
             self.prepare_error = True
-            LOG.exception("An error occurred preparing datastore: %s",
-                          encodeutils.exception_to_unicode(ex))
+            LOG.exception("Failed to prepare datastore: %s", ex)
             raise
         finally:
             LOG.info("Ending datastore prepare for '%s'.", self.manager)
@@ -352,8 +269,7 @@ class Manager(periodic_task.PeriodicTasks):
                                   "%s", str(ex))
 
         try:
-            LOG.info("Calling post_prepare for '%s' datastore.",
-                     self.manager)
+            LOG.info("Starting post prepare for '%s' datastore.", self.manager)
             self.post_prepare(context, packages, databases, memory_mb,
                               users, device_path, mount_point, backup_info,
                               config_contents, root_password, overrides,
@@ -364,13 +280,6 @@ class Manager(periodic_task.PeriodicTasks):
             LOG.exception("An error occurred in post prepare: %s",
                           str(ex))
             raise
-
-    def apply_overrides_on_prepare(self, context, overrides):
-        self.update_overrides(context, overrides)
-        self.restart(context)
-
-    def enable_root_on_prepare(self, context, root_password):
-        self.enable_root_with_password(context, root_password)
 
     @abc.abstractmethod
     def do_prepare(self, context, packages, databases, memory_mb, users,
@@ -480,6 +389,20 @@ class Manager(periodic_task.PeriodicTasks):
             config_contents = configuration['config_contents']
             self.configuration_manager.save_configuration(config_contents)
 
+    def apply_overrides_on_prepare(self, context, overrides):
+        self.update_overrides(context, overrides)
+        self.restart(context)
+
+    def update_overrides(self, context, overrides, remove=False):
+        LOG.debug("Updating overrides.")
+        raise exception.DatastoreOperationNotSupported(
+            operation='update_overrides', datastore=self.manager)
+
+    def apply_overrides(self, context, overrides):
+        LOG.debug("Applying overrides.")
+        raise exception.DatastoreOperationNotSupported(
+            operation='apply_overrides', datastore=self.manager)
+
     #################
     # Cluster related
     #################
@@ -490,6 +413,78 @@ class Manager(periodic_task.PeriodicTasks):
     #############
     # Log related
     #############
+    def get_datastore_log_defs(self):
+        """Any datastore-specific log files should be overridden in this dict
+        by the corresponding Manager class.
+
+        Format of a dict entry:
+
+        'name_of_log': {self.GUEST_LOG_TYPE_LABEL:
+                            Specified by the Enum in guest_log.LogType,
+                        self.GUEST_LOG_USER_LABEL:
+                            User that owns the file,
+                        self.GUEST_LOG_FILE_LABEL:
+                            Path on filesystem where the log resides,
+                        self.GUEST_LOG_SECTION_LABEL:
+                            Section where to put config (if ini style)
+                        self.GUEST_LOG_ENABLE_LABEL: {
+                            Dict of config_group settings to enable log},
+                        self.GUEST_LOG_DISABLE_LABEL: {
+                            Dict of config_group settings to disable log},
+
+        See guestagent_log_defs for an example.
+        """
+        return {}
+
+    def get_guest_log_defs(self):
+        """Return all the guest log defs."""
+        if not self._guest_log_defs:
+            self._guest_log_defs = dict(self.get_datastore_log_defs())
+            self._guest_log_defs.update(self.guestagent_log_defs)
+        return self._guest_log_defs
+
+    def get_guest_log_cache(self):
+        """Make sure the guest_log_cache is loaded and return it."""
+        self._refresh_guest_log_cache()
+        return self._guest_log_cache
+
+    def _refresh_guest_log_cache(self):
+        if self._guest_log_cache:
+            # Replace the context if it's changed
+            if self._guest_log_loaded_context != self.guest_log_context:
+                for log_name in self._guest_log_cache.keys():
+                    self._guest_log_cache[log_name].context = (
+                        self.guest_log_context)
+        else:
+            # Load the initial cache
+            self._guest_log_cache = {}
+            if self.guest_log_context:
+                gl_defs = self.get_guest_log_defs()
+                try:
+                    exposed_logs = CONF.get(self.manager).get(
+                        'guest_log_exposed_logs')
+                except oslo_cfg.NoSuchOptError:
+                    exposed_logs = ''
+                LOG.debug("Available log defs: %s", ",".join(gl_defs.keys()))
+                exposed_logs = exposed_logs.lower().replace(',', ' ').split()
+                LOG.debug("Exposing log defs: %s", ",".join(exposed_logs))
+                expose_all = 'all' in exposed_logs
+                for log_name in gl_defs.keys():
+                    gl_def = gl_defs[log_name]
+                    exposed = expose_all or log_name in exposed_logs
+                    LOG.debug("Building guest log '%(name)s' from def: %(def)s"
+                              " (exposed: %(exposed)s)",
+                              {'name': log_name, 'def': gl_def,
+                               'exposed': exposed})
+                    self._guest_log_cache[log_name] = guest_log.GuestLog(
+                        self.guest_log_context, log_name,
+                        gl_def[self.GUEST_LOG_TYPE_LABEL],
+                        gl_def[self.GUEST_LOG_USER_LABEL],
+                        gl_def[self.GUEST_LOG_FILE_LABEL],
+                        exposed)
+
+        self._guest_log_loaded_context = self.guest_log_context
+
     def guest_log_list(self, context):
         LOG.info("Getting list of guest logs.")
         self.guest_log_context = context
@@ -743,9 +738,6 @@ class Manager(periodic_task.PeriodicTasks):
             driver, module_type, id, name, datastore, ds_version)
         LOG.info("Deleted module: %s", name)
 
-    ###############
-    # Not Supported
-    ###############
     def change_passwords(self, context, users):
         LOG.debug("Changing passwords.")
         with EndNotification(context):
@@ -761,6 +753,9 @@ class Manager(periodic_task.PeriodicTasks):
         LOG.debug("Enabling root.")
         raise exception.DatastoreOperationNotSupported(
             operation='enable_root', datastore=self.manager)
+
+    def enable_root_on_prepare(self, context, root_password):
+        self.enable_root_with_password(context, root_password)
 
     def enable_root_with_password(self, context, root_password=None):
         LOG.debug("Enabling root with password.")
@@ -782,7 +777,7 @@ class Manager(periodic_task.PeriodicTasks):
         raise exception.DatastoreOperationNotSupported(
             operation='create_backup', datastore=self.manager)
 
-    def _perform_restore(self, backup_info, context, restore_location, app):
+    def perform_restore(self, context, restore_location, backup_info):
         LOG.debug("Performing restore.")
         raise exception.DatastoreOperationNotSupported(
             operation='_perform_restore', datastore=self.manager)
@@ -854,16 +849,6 @@ class Manager(periodic_task.PeriodicTasks):
         raise exception.DatastoreOperationNotSupported(
             operation='get_configuration_changes', datastore=self.manager)
 
-    def update_overrides(self, context, overrides, remove=False):
-        LOG.debug("Updating overrides.")
-        raise exception.DatastoreOperationNotSupported(
-            operation='update_overrides', datastore=self.manager)
-
-    def apply_overrides(self, context, overrides):
-        LOG.debug("Applying overrides.")
-        raise exception.DatastoreOperationNotSupported(
-            operation='apply_overrides', datastore=self.manager)
-
     def get_replication_snapshot(self, context, snapshot_info,
                                  replica_source_config=None):
         LOG.debug("Getting replication snapshot.")
@@ -895,6 +880,11 @@ class Manager(periodic_task.PeriodicTasks):
         raise exception.DatastoreOperationNotSupported(
             operation='enable_as_master', datastore=self.manager)
 
+    def demote_replication_master(self, context):
+        LOG.debug("Demoting replication master.")
+        raise exception.DatastoreOperationNotSupported(
+            operation='demote_replication_master', datastore=self.manager)
+
     def get_txn_count(self, context):
         LOG.debug("Getting transaction count.")
         raise exception.DatastoreOperationNotSupported(
@@ -909,8 +899,3 @@ class Manager(periodic_task.PeriodicTasks):
         LOG.debug("Waiting for transaction.")
         raise exception.DatastoreOperationNotSupported(
             operation='wait_for_txn', datastore=self.manager)
-
-    def demote_replication_master(self, context):
-        LOG.debug("Demoting replication master.")
-        raise exception.DatastoreOperationNotSupported(
-            operation='demote_replication_master', datastore=self.manager)
