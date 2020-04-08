@@ -141,8 +141,8 @@ class Manager(periodic_task.PeriodicTasks):
         """These are log files that should be available on every Trove
         instance.  By definition, these should be of type LogType.SYS
         """
-        log_dir = CONF.get('log_dir', '/var/log/trove/')
-        log_file = CONF.get('log_file', 'trove-guestagent.log')
+        log_dir = CONF.log_dir or '/var/log/trove/'
+        log_file = CONF.log_file or 'trove-guestagent.log'
         guestagent_log = guestagent_utils.build_file_path(log_dir, log_file)
         return {
             self.GUEST_LOG_DEFS_GUEST_LABEL: {

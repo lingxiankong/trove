@@ -160,3 +160,6 @@ class MySqlManager(manager.Manager):
             LOG.exception("Error enabling replication.")
             self.status.set_status(rd_instance.ServiceStatuses.FAILED)
             raise
+
+    def stop_db(self, context, do_not_start_on_reboot=False):
+        self.app.stop_db(do_not_start_on_reboot=do_not_start_on_reboot)
