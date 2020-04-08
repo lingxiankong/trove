@@ -628,9 +628,7 @@ class BaseMySqlApp(object):
         if not self.status.wait_for_real_status_to_change_to(
             instance.ServiceStatuses.HEALTHY,
             CONF.state_change_wait_time, update_db):
-            LOG.error("Failed to start mysql")
-            self.status.end_restart()
-            raise RuntimeError(_("Could not start MySQL!"))
+            raise exception.TroveError(_("Failed to start mysql"))
 
     def start_db_with_conf_changes(self, config_contents):
         LOG.info("Starting MySQL with conf changes.")
@@ -656,9 +654,7 @@ class BaseMySqlApp(object):
         if not self.status.wait_for_real_status_to_change_to(
             instance.ServiceStatuses.SHUTDOWN,
             CONF.state_change_wait_time, update_db):
-            LOG.error("Could not stop MySQL.")
-            self.status.end_restart()
-            raise RuntimeError(_("Could not stop MySQL!"))
+            raise exception.TroveError("Failed to stop mysql")
 
     def reset_configuration(self, configuration):
         config_contents = configuration['config_contents']
@@ -674,6 +670,22 @@ class BaseMySqlApp(object):
             global ENGINE
             ENGINE = None
         self._save_authentication_properties(admin_password)
+
+    def restart(self):
+        LOG.info("Restarting mysql")
+
+        try:
+            docker_util.restart_container(self.docker_client)
+        except Exception:
+            LOG.exception("Failed to restart mysql")
+            raise exception.TroveError("Failed to restart mysql")
+
+        if not self.status.wait_for_real_status_to_change_to(
+            instance.ServiceStatuses.HEALTHY,
+            CONF.state_change_wait_time, update_db=False):
+            raise exception.TroveError("Failed to start mysql")
+
+        LOG.info("Finished restarting mysql")
 
 
 class BaseMySqlRootAccess(object):

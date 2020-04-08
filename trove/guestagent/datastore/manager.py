@@ -163,9 +163,8 @@ class Manager(periodic_task.PeriodicTasks):
     @periodic_task.periodic_task
     def update_status(self, context):
         """Update the status of the trove instance."""
-        if not self.status.is_installed or self.status._is_restarting:
-            LOG.info("Database service is not installed or is in restart "
-                     "mode, skip status check")
+        if not self.status.is_installed:
+            LOG.info("Database service is not installed, skip status check")
             return
 
         LOG.debug("Starting to check database service status")

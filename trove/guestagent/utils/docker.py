@@ -91,3 +91,8 @@ def run_command(client, command, name="database"):
         raise Exception(_('Running command error: %s' % output))
 
     return output
+
+
+def restart_container(client, name="database"):
+    container = client.containers.get(name)
+    container.restart(timeout=CONF.state_change_wait_time)

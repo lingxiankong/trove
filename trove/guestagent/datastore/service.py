@@ -12,8 +12,6 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-
-
 import os
 import time
 
@@ -22,12 +20,11 @@ from oslo_utils import timeutils
 
 from trove.common import cfg
 from trove.common import context as trove_context
-from trove.common.i18n import _
 from trove.common import instance
+from trove.common.i18n import _
 from trove.conductor import api as conductor_api
 from trove.guestagent.common import guestagent_utils
 from trove.guestagent.common import operating_system
-
 
 LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
@@ -40,18 +37,6 @@ class BaseDbStatus(object):
     the state of the application is determined by calling a series of
     commands.
 
-    This class also handles saving and load the status of the DB application
-    in the database.
-    The status is updated whenever the update() method is called, except
-    if the state is changed to building or restart mode using the
-     "begin_install" and "begin_restart" methods.
-    The building mode persists in the database while restarting mode does
-    not (so if there is a Python Pete crash update() will set the status to
-    show a failure).
-    These modes are exited and functionality to update() returns when
-    end_install or end_restart() is called, at which point the status again
-    reflects the actual status of the DB app.
-
     This is a base class, subclasses must implement real logic for
     determining current status of DB in get_actual_db_status()
     """
@@ -62,7 +47,6 @@ class BaseDbStatus(object):
 
     def __init__(self, docker_client):
         self.status = None
-        self.restart_mode = False
         self.docker_client = docker_client
 
         self.__prepare_completed = None
@@ -92,10 +76,6 @@ class BaseDbStatus(object):
 
         self.set_status(instance.ServiceStatuses.BUILDING, True)
 
-    def begin_restart(self):
-        """Called before restarting DB server."""
-        self.restart_mode = True
-
     def set_ready(self):
         prepare_end_file = guestagent_utils.build_file_path(
             self.GUESTAGENT_DIR, self.PREPARE_END_FILENAME)
@@ -120,15 +100,11 @@ class BaseDbStatus(object):
             LOG.info("Set final status to %s.", final_status)
             self.set_status(final_status, force=True)
         else:
-            self._end_install_or_restart(True)
+            self._end_install(True)
 
-    def end_restart(self):
-        self.restart_mode = False
-        LOG.info("Ending restart.")
-        self._end_install_or_restart(False)
+    def _end_install(self, force):
+        """Called after DB is installed.
 
-    def _end_install_or_restart(self, force):
-        """Called after DB is installed or restarted.
         Updates the database with the actual DB server status.
         """
         real_status = self.get_actual_db_status()
@@ -145,10 +121,6 @@ class BaseDbStatus(object):
         its status won't result in nonsense.
         """
         return self.prepare_completed
-
-    @property
-    def _is_restarting(self):
-        return self.restart_mode
 
     @property
     def is_running(self):
@@ -177,39 +149,9 @@ class BaseDbStatus(object):
         """Find and report status of DB on this machine.
         The database is updated and the status is also returned.
         """
-        if self.is_installed and not self._is_restarting:
+        if self.is_installed:
             status = self.get_actual_db_status()
             self.set_status(status)
-
-    def restart_db_service(self, service_candidates, timeout):
-        """Restart the database.
-        Do not change the service auto-start setting.
-        Disable the Trove instance heartbeat updates during the restart.
-
-        1. Stop the database service.
-        2. Wait for the database to shutdown.
-        3. Start the database service.
-        4. Wait for the database to start running.
-
-        :param service_candidates:   List of possible system service names.
-        :type service_candidates:    list
-
-        :param timeout:              Wait timeout in seconds.
-        :type timeout:               integer
-
-        :raises:              :class:`RuntimeError` on failure.
-        """
-        try:
-            self.begin_restart()
-            self.stop_db_service(service_candidates, timeout,
-                                 disable_on_boot=False, update_db=False)
-            self.start_db_service(service_candidates, timeout,
-                                  enable_on_boot=False, update_db=False)
-        except Exception as e:
-            LOG.exception(e)
-            raise RuntimeError(_("Database restart failed."))
-        finally:
-            self.end_restart()
 
     def start_db_service(self, service_candidates, timeout,
                          enable_on_boot=True, update_db=False):

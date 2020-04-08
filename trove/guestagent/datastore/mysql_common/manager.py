@@ -163,3 +163,6 @@ class MySqlManager(manager.Manager):
 
     def stop_db(self, context, do_not_start_on_reboot=False):
         self.app.stop_db(do_not_start_on_reboot=do_not_start_on_reboot)
+
+    def restart(self, context):
+        self.app.restart()
