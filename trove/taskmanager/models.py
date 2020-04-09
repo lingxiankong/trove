@@ -1792,7 +1792,7 @@ class ResizeActionBase(object):
         # so we know it's alive.
         utils.poll_until(
             self._guest_is_awake,
-            sleep_time=2,
+            sleep_time=3,
             time_out=CONF.resize_time_out)
 
     def _assert_nova_status_is_ok(self):
@@ -1805,22 +1805,7 @@ class ResizeActionBase(object):
             raise TroveError(msg)
 
     def _assert_datastore_is_ok(self):
-        # Tell the guest to turn on datastore, and ensure the status becomes
-        # RUNNING.
         self._start_datastore()
-        utils.poll_until(
-            self._datastore_is_online,
-            sleep_time=2,
-            time_out=CONF.resize_time_out)
-
-    def _assert_datastore_is_offline(self):
-        # Tell the guest to turn off MySQL, and ensure the status becomes
-        # SHUTDOWN.
-        self.instance.guest.stop_db(do_not_start_on_reboot=True)
-        utils.poll_until(
-            self._datastore_is_offline,
-            sleep_time=2,
-            time_out=CONF.resize_time_out)
 
     def _assert_processes_are_ok(self):
         """Checks the procs; if anything is wrong, reverts the operation."""
@@ -1853,7 +1838,7 @@ class ResizeActionBase(object):
         """Initiates the action."""
         try:
             LOG.debug("Instance %s calling stop_db...", self.instance.id)
-            self._assert_datastore_is_offline()
+            self.instance.guest.stop_db()
             self._perform_nova_action()
         finally:
             if self.instance.db_info.task_status != (
@@ -1873,12 +1858,11 @@ class ResizeActionBase(object):
         try:
             LOG.debug("Initiating nova action")
             self._initiate_nova_action()
-            LOG.debug("Waiting for nova action")
+            LOG.debug("Waiting for nova action completed")
             self._wait_for_nova_action()
             LOG.debug("Asserting nova status is ok")
             self._assert_nova_status_is_ok()
             need_to_revert = True
-            LOG.debug("* * * REVERT BARRIER PASSED * * *")
             LOG.debug("Asserting nova action success")
             self._assert_nova_action_was_successful()
             LOG.debug("Asserting processes are OK")
@@ -1903,7 +1887,6 @@ class ResizeActionBase(object):
             LOG.error("Error resizing instance %s.", self.instance.id)
             raise
 
-        LOG.debug("Recording success")
         self._record_action_success()
         LOG.debug("End resize method _perform_nova_action instance: %s",
                   self.instance.id)
@@ -1916,7 +1899,7 @@ class ResizeActionBase(object):
 
         utils.poll_until(
             update_server_info,
-            sleep_time=2,
+            sleep_time=3,
             time_out=CONF.resize_time_out)
 
     def _wait_for_revert_nova_action(self):

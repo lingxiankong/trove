@@ -41,7 +41,7 @@ class BaseDbStatus(object):
     determining current status of DB in get_actual_db_status()
     """
 
-    GUESTAGENT_DIR = '~'
+    GUESTAGENT_DIR = '/opt/trove-guestagent'
     PREPARE_START_FILENAME = '.guestagent.prepare.start'
     PREPARE_END_FILENAME = '.guestagent.prepare.end'
 
@@ -126,7 +126,8 @@ class BaseDbStatus(object):
     def is_running(self):
         """True if DB server is running."""
         return (self.status is not None and
-                self.status == instance.ServiceStatuses.RUNNING)
+                self.status in [instance.ServiceStatuses.RUNNING,
+                                instance.ServiceStatuses.HEALTHY])
 
     def set_status(self, status, force=False):
         """Use conductor to update the DB app status."""

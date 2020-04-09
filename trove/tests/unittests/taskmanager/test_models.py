@@ -822,8 +822,7 @@ class BuiltInstanceTasksTest(trove_testtools.TestCase):
                                          self.new_flavor)
         # verify
         self.assertIsNot(self.instance_task.server, orig_server)
-        self.instance_task._guest.stop_db.assert_any_call(
-            do_not_start_on_reboot=True)
+        self.assertEqual(1, self.instance_task._guest.stop_db.call_count)
         orig_server.resize.assert_any_call(self.new_flavor['id'])
         self.assertThat(self.db_instance.task_status, Is(InstanceTasks.NONE))
         self.assertEqual(1, self.stub_server_mgr.get.call_count)
@@ -842,8 +841,7 @@ class BuiltInstanceTasksTest(trove_testtools.TestCase):
             self.assertTrue(self.stub_server_mgr.get.called)
             self.assertIs(self.instance_task.server,
                           self.stub_verifying_server)
-            self.instance_task._guest.stop_db.assert_any_call(
-                do_not_start_on_reboot=True)
+            self.assertEqual(1, self.instance_task._guest.stop_db.call_count)
             orig_server.resize.assert_any_call(self.new_flavor['id'])
             self.assertThat(self.db_instance.task_status,
                             Is(InstanceTasks.NONE))

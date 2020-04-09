@@ -88,9 +88,7 @@ class MySqlManager(manager.Manager):
             LOG.info('Preparing the storage for %s, mount path %s',
                      device_path, mount_point)
 
-            self.app.stop_db(
-                do_not_start_on_reboot=self.volume_do_not_start_on_reboot
-            )
+            self.app.stop_db()
 
             device = volume.VolumeDevice(device_path)
             # unmount if device is already mounted
@@ -161,8 +159,11 @@ class MySqlManager(manager.Manager):
             self.status.set_status(rd_instance.ServiceStatuses.FAILED)
             raise
 
-    def stop_db(self, context, do_not_start_on_reboot=False):
-        self.app.stop_db(do_not_start_on_reboot=do_not_start_on_reboot)
+    def stop_db(self, context):
+        self.app.stop_db()
 
     def restart(self, context):
         self.app.restart()
+
+    def start_db_with_conf_changes(self, context, config_contents):
+        self.app.start_db_with_conf_changes(config_contents)

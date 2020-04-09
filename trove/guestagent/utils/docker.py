@@ -30,7 +30,8 @@ def stop_container(client, name="database"):
     container.stop(timeout=CONF.state_change_wait_time)
 
 
-def start_container(client, image, name="database", restart_policy="always",
+def start_container(client, image, name="database",
+                    restart_policy="unless-stopped",
                     volumes={}, ports={}, user="", network_mode="host",
                     environment={}, command=""):
     """Start a docker container.

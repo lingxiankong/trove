@@ -409,15 +409,14 @@ class API(object):
         self._call("reset_configuration", self.agent_high_timeout,
                    version=version, configuration=configuration)
 
-    def stop_db(self, do_not_start_on_reboot=False):
+    def stop_db(self):
         """Stop the database server."""
         LOG.debug("Sending the call to stop the database process "
                   "on the Guest.")
         version = self.API_BASE_VERSION
 
         self._call("stop_db", self.agent_high_timeout,
-                   version=version,
-                   do_not_start_on_reboot=do_not_start_on_reboot)
+                   version=version)
 
     def upgrade(self, instance_version, location, metadata=None):
         """Make an asynchronous call to self upgrade the guest agent."""

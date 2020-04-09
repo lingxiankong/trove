@@ -580,10 +580,9 @@ class BaseMySqlApp(object):
             self.configuration_manager.apply_user_override(
                 {MySQLConfParser.SERVER_CONF_SECTION: overrides})
 
-    def start_db(self, update_db=False, disable_on_boot=False, timeout=120):
+    def start_db(self, update_db=False):
         LOG.info("Starting MySQL.")
 
-        restart_policy = "none" if disable_on_boot else "always"
         try:
             root_pass = self.get_auth_password(file="root.cnf")
         except exception.UnprocessableEntity:
@@ -604,7 +603,6 @@ class BaseMySqlApp(object):
             docker_util.start_container(
                 self.docker_client,
                 self.docker_image,
-                restart_policy=restart_policy,
                 volumes={
                     "/etc/mysql": {"bind": "/etc/mysql", "mode": "rw"},
                     "/var/run/mysqld": {"bind": "/var/run/mysqld",
@@ -631,18 +629,16 @@ class BaseMySqlApp(object):
             raise exception.TroveError(_("Failed to start mysql"))
 
     def start_db_with_conf_changes(self, config_contents):
-        LOG.info("Starting MySQL with conf changes.")
-        LOG.debug("Inside the guest - Status is_running = (%s).",
-                  self.status.is_running)
         if self.status.is_running:
-            LOG.error("Cannot execute start_db_with_conf_changes because "
-                      "MySQL state == %s.", self.status)
-            raise RuntimeError(_("MySQL not stopped."))
+            LOG.info("Stopping MySQL before applying changes.")
+            self.stop_db()
+
         LOG.info("Resetting configuration.")
         self._reset_configuration(config_contents)
-        self.start_db(True)
 
-    def stop_db(self, update_db=False, do_not_start_on_reboot=False):
+        self.start_db(update_db=True)
+
+    def stop_db(self, update_db=False):
         LOG.info("Stopping MySQL.")
 
         try:
@@ -655,6 +651,32 @@ class BaseMySqlApp(object):
             instance.ServiceStatuses.SHUTDOWN,
             CONF.state_change_wait_time, update_db):
             raise exception.TroveError("Failed to stop mysql")
+
+    def wipe_ib_logfiles(self):
+        """Destroys the iblogfiles.
+
+        If for some reason the selected log size in the conf changes from the
+        current size of the files MySQL will fail to start, so we delete the
+        files to be safe.
+        """
+        for index in range(2):
+            try:
+                # On restarts, sometimes these are wiped. So it can be a race
+                # to have MySQL start up before it's restarted and these have
+                # to be deleted. That's why its ok if they aren't found and
+                # that is why we use the "force" option to "remove".
+                operating_system.remove("%s/ib_logfile%d"
+                                        % (self.get_data_dir(), index),
+                                        force=True, as_root=True)
+            except exception.ProcessExecutionError:
+                LOG.exception("Could not delete logfile.")
+                raise
+
+    def _reset_configuration(self, configuration, admin_password=None):
+        self.configuration_manager.save_configuration(configuration)
+        if admin_password:
+            self.save_password(ADMIN_USER_NAME, admin_password)
+        self.wipe_ib_logfiles()
 
     def reset_configuration(self, configuration):
         config_contents = configuration['config_contents']
