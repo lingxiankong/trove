@@ -100,7 +100,6 @@ class MySqlManager(manager.Manager):
                 device.migrate_data(mount_point, target_subdir="data")
             # mount the volume
             device.mount(mount_point)
-            operating_system.remove("%s/lost+found" % mount_point, force=True)
             operating_system.chown(mount_point, CONF.database_service_uid,
                                    CONF.database_service_uid,
                                    recursive=False, as_root=True)

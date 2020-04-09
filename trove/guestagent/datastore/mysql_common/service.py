@@ -613,7 +613,10 @@ class BaseMySqlApp(object):
                 user=user,
                 environment={
                     "MYSQL_ROOT_PASSWORD": root_pass,
-                }
+                },
+                # Cinder volume initialization(after formatted) may leave a
+                # lost+found folder
+                command="--ignore-db-dir lost+found"
             )
 
             # Save root password
