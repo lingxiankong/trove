@@ -19,10 +19,12 @@
 from oslo_log import log as logging
 
 from trove.common import cfg
+from trove.common import configurations
 from trove.common import exception
 from trove.common import instance as rd_instance
 from trove.common.notification import EndNotification
 from trove.guestagent import backup
+from trove.guestagent import guest_log
 from trove.guestagent import volume
 from trove.guestagent.common import operating_system
 from trove.guestagent.datastore import manager
@@ -41,6 +43,10 @@ class MySqlManager(manager.Manager):
         self.status = mysql_app_status
         self.adm = mysql_admin
         self.volume_do_not_start_on_reboot = False
+
+    @property
+    def configuration_manager(self):
+        return self.app.configuration_manager
 
     def get_service_status(self):
         try:
@@ -166,3 +172,56 @@ class MySqlManager(manager.Manager):
 
     def start_db_with_conf_changes(self, context, config_contents):
         self.app.start_db_with_conf_changes(config_contents)
+
+    def get_datastore_log_defs(self):
+        owner = cfg.get_configuration_property('database_service_uid')
+        datastore_dir = self.app.get_data_dir()
+        server_section = configurations.MySQLConfParser.SERVER_CONF_SECTION
+        long_query_time = CONF.get(self.manager).get(
+            'guest_log_long_query_time') / 1000
+        general_log_file = self.build_log_file_name(
+            self.GUEST_LOG_DEFS_GENERAL_LABEL, owner,
+            datastore_dir=datastore_dir)
+        error_log_file = self.validate_log_file('/var/log/mysqld.log', owner)
+        slow_query_log_file = self.build_log_file_name(
+            self.GUEST_LOG_DEFS_SLOW_QUERY_LABEL, owner,
+            datastore_dir=datastore_dir)
+        return {
+            self.GUEST_LOG_DEFS_GENERAL_LABEL: {
+                self.GUEST_LOG_TYPE_LABEL: guest_log.LogType.USER,
+                self.GUEST_LOG_USER_LABEL: owner,
+                self.GUEST_LOG_FILE_LABEL: general_log_file,
+                self.GUEST_LOG_SECTION_LABEL: server_section,
+                self.GUEST_LOG_ENABLE_LABEL: {
+                    'general_log': 'on',
+                    'general_log_file': general_log_file,
+                    'log_output': 'file',
+                },
+                self.GUEST_LOG_DISABLE_LABEL: {
+                    'general_log': 'off',
+                },
+            },
+            self.GUEST_LOG_DEFS_SLOW_QUERY_LABEL: {
+                self.GUEST_LOG_TYPE_LABEL: guest_log.LogType.USER,
+                self.GUEST_LOG_USER_LABEL: owner,
+                self.GUEST_LOG_FILE_LABEL: slow_query_log_file,
+                self.GUEST_LOG_SECTION_LABEL: server_section,
+                self.GUEST_LOG_ENABLE_LABEL: {
+                    'slow_query_log': 'on',
+                    'slow_query_log_file': slow_query_log_file,
+                    'long_query_time': long_query_time,
+                },
+                self.GUEST_LOG_DISABLE_LABEL: {
+                    'slow_query_log': 'off',
+                },
+            },
+            self.GUEST_LOG_DEFS_ERROR_LABEL: {
+                self.GUEST_LOG_TYPE_LABEL: guest_log.LogType.SYS,
+                self.GUEST_LOG_USER_LABEL: owner,
+                self.GUEST_LOG_FILE_LABEL: error_log_file,
+            },
+        }
+
+    def apply_overrides(self, context, overrides):
+        LOG.debug("Applying overrides (%s).", overrides)
+        self.app.apply_overrides(overrides)

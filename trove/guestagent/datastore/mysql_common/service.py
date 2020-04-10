@@ -686,6 +686,20 @@ class BaseMySqlApp(object):
         LOG.info("Resetting configuration.")
         self._reset_configuration(config_contents)
 
+    def apply_overrides(self, overrides):
+        LOG.debug("Applying overrides to running MySQL.")
+        with mysql_util.SqlClient(self.get_engine()) as client:
+            for k, v in overrides.items():
+                byte_value = guestagent_utils.to_bytes(v)
+                q = sql_query.SetServerVariable(key=k, value=byte_value)
+                t = text(str(q))
+                try:
+                    client.execute(t)
+                except exc.OperationalError:
+                    output = {'key': k, 'value': byte_value}
+                    LOG.exception("Unable to set %(key)s with value "
+                                  "%(value)s.", output)
+
     def reset_admin_password(self, admin_password):
         """Replace the password in the my.cnf file."""
         # grant the new  admin password
