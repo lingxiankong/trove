@@ -536,7 +536,7 @@ class BaseMySqlApp(object):
                               'password': password,
                               'host': "localhost"}}
         operating_system.write_file('/opt/trove-guestagent/%s.cnf' % user,
-                                    content, codec=IniCodec(), as_root=True)
+                                    content, codec=IniCodec())
 
     def secure(self):
         LOG.info("Securing MySQL now.")

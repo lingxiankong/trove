@@ -467,10 +467,8 @@ common_opts = [
                help='Key (OpenSSL aes_cbc) to encrypt instance keys in DB.'),
     cfg.StrOpt('instance_rpc_encr_key',
                help='Key (OpenSSL aes_cbc) for instance RPC encryption.'),
-    cfg.StrOpt('database_service_uid', default='5000',
-               help='The UID(GID) of the database process user. The user must '
-                    'be created before database running. Guest agent should '
-                    'take care of that.'),
+    cfg.StrOpt('database_service_uid', default='1000',
+               help='The UID(GID) of trove guest agent user.'),
 ]
 
 

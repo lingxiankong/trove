@@ -559,6 +559,7 @@ def _create_directory(dir_path, force=True, **kwargs):
     :param force:           No error if existing, make parent directories
                             as needed.
     :type force:            boolean
+    :param as_root: Run as root user, default: False.
     """
 
     options = (('p', force),)
