@@ -1366,7 +1366,6 @@ class Instance(BuiltInstance):
                                _resize_resources)
 
     def reboot(self):
-        self.validate_can_perform_action()
         LOG.info("Rebooting instance %s.", self.id)
         if self.db_info.cluster_id is not None and not self.context.is_admin:
             raise exception.ClusterInstanceOperationNotSupported()

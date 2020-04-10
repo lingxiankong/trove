@@ -699,6 +699,13 @@ class BaseMySqlApp(object):
     def restart(self):
         LOG.info("Restarting mysql")
 
+        # Ensure folders permission for database.
+        for folder in ['/etc/mysql', '/var/run/mysqld']:
+            operating_system.create_directory(
+                folder, user=CONF.database_service_uid,
+                group=CONF.database_service_uid, force=True,
+                as_root=True)
+
         try:
             docker_util.restart_container(self.docker_client)
         except Exception:

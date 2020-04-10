@@ -1237,13 +1237,13 @@ class BuiltInstanceTasks(BuiltInstance, NotifyMixin, ConfigurationMixin):
 
     def reboot(self):
         try:
-            LOG.debug("Stopping datastore on instance %s.", self.id)
+            LOG.debug("Stopping database on instance %s.", self.id)
             try:
                 self.guest.stop_db()
             except (exception.GuestError, exception.GuestTimeout) as e:
                 # Acceptable to be here if db was already in crashed state
                 # Also we check guest state before issuing reboot
-                LOG.debug(str(e))
+                LOG.warning(str(e))
 
             LOG.info("Rebooting instance %s.", self.id)
             self.server.reboot()
@@ -1252,14 +1252,12 @@ class BuiltInstanceTasks(BuiltInstance, NotifyMixin, ConfigurationMixin):
                 self.refresh_compute_server_info()
                 return self.server_status_matches(['ACTIVE'])
 
-            utils.poll_until(
-                update_server_info,
-                sleep_time=3,
-                time_out=CONF.reboot_time_out)
+            utils.poll_until(update_server_info, sleep_time=3,
+                             time_out=CONF.reboot_time_out, initial_delay=5)
 
-            # Set the status to PAUSED. The guest agent will reset the status
-            # when the reboot completes and MySQL is running.
-            self.set_datastore_status_to_paused()
+            LOG.info("Starting database on instance %s.", self.id)
+            self.guest.restart()
+
             LOG.info("Rebooted instance %s successfully.", self.id)
         except Exception as e:
             LOG.error("Failed to reboot instance %(id)s: %(e)s",

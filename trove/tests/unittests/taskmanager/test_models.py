@@ -850,11 +850,12 @@ class BuiltInstanceTasksTest(trove_testtools.TestCase):
     @patch.object(utils, 'poll_until')
     def test_reboot(self, mock_poll):
         self.instance_task.server.reboot = Mock()
-        self.instance_task.set_datastore_status_to_paused = Mock()
+
         self.instance_task.reboot()
+
         self.instance_task._guest.stop_db.assert_any_call()
         self.instance_task.server.reboot.assert_any_call()
-        self.instance_task.set_datastore_status_to_paused.assert_any_call()
+        self.instance_task._guest.restart.assert_any_call()
 
     @patch.object(BaseInstance, 'update_db')
     def test_detach_replica(self, mock_update_db):
