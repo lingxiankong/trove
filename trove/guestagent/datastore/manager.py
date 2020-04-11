@@ -66,7 +66,6 @@ class Manager(periodic_task.PeriodicTasks):
     MODULE_APPLY_TO_ALL = module_manager.ModuleManager.MODULE_APPLY_TO_ALL
 
     docker_client = docker.from_env()
-    docker_image = ""
 
     def __init__(self, manager_name):
         super(Manager, self).__init__(CONF)
@@ -185,19 +184,22 @@ class Manager(periodic_task.PeriodicTasks):
     def prepare(self, context, packages, databases, memory_mb, users,
                 device_path=None, mount_point=None, backup_info=None,
                 config_contents=None, root_password=None, overrides=None,
-                cluster_config=None, snapshot=None, modules=None):
+                cluster_config=None, snapshot=None, modules=None,
+                ds_version=None):
         """Set up datastore on a Guest Instance."""
         with EndNotification(context, instance_id=CONF.guest_id):
             self._prepare(context, packages, databases, memory_mb, users,
                           device_path, mount_point, backup_info,
                           config_contents, root_password, overrides,
-                          cluster_config, snapshot, modules)
+                          cluster_config, snapshot, modules,
+                          ds_version=ds_version)
 
     def _prepare(self, context, packages, databases, memory_mb, users,
                  device_path, mount_point, backup_info,
                  config_contents, root_password, overrides,
-                 cluster_config, snapshot, modules):
-        LOG.info("Starting datastore prepare for '%s'.", self.manager)
+                 cluster_config, snapshot, modules, ds_version=None):
+        LOG.info("Starting datastore prepare for '%s:%s'.", self.manager,
+                 ds_version)
         self.status.begin_install()
         post_processing = True if cluster_config else False
         try:
@@ -206,7 +208,7 @@ class Manager(periodic_task.PeriodicTasks):
             self.do_prepare(context, packages, databases, memory_mb,
                             users, device_path, mount_point, backup_info,
                             config_contents, root_password, overrides,
-                            cluster_config, snapshot)
+                            cluster_config, snapshot, ds_version=ds_version)
         except Exception as ex:
             self.prepare_error = True
             LOG.exception("Failed to prepare datastore: %s", ex)
@@ -283,7 +285,8 @@ class Manager(periodic_task.PeriodicTasks):
     @abc.abstractmethod
     def do_prepare(self, context, packages, databases, memory_mb, users,
                    device_path, mount_point, backup_info, config_contents,
-                   root_password, overrides, cluster_config, snapshot):
+                   root_password, overrides, cluster_config, snapshot,
+                   ds_version=None):
         """This is called from prepare when the Trove instance first comes
         online.  'Prepare' is the first rpc message passed from the
         task manager.  do_prepare handles all the base configuration of

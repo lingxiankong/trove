@@ -20,8 +20,8 @@ class MySqlAppStatus(service.BaseMySqlAppStatus):
 
 
 class MySqlApp(service.BaseMySqlApp):
-    def __init__(self, status, docker_client, docker_image):
-        super(MySqlApp, self).__init__(status, docker_client, docker_image)
+    def __init__(self, status, docker_client):
+        super(MySqlApp, self).__init__(status, docker_client)
 
 
 class MySqlRootAccess(service.BaseMySqlRootAccess):

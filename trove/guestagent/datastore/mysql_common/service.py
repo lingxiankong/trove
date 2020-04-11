@@ -476,11 +476,10 @@ class BaseMySqlApp(object):
     def get_client_auth_file(cls, file="os_admin.cnf"):
         return guestagent_utils.build_file_path("/opt/trove-guestagent", file)
 
-    def __init__(self, status, docker_client, docker_image):
+    def __init__(self, status, docker_client):
         """By default login with root no password for initial setup."""
         self.status = status
         self.docker_client = docker_client
-        self.docker_image = docker_image
 
     def _create_admin_user(self, client, password):
         """
@@ -580,8 +579,11 @@ class BaseMySqlApp(object):
             self.configuration_manager.apply_user_override(
                 {MySQLConfParser.SERVER_CONF_SECTION: overrides})
 
-    def start_db(self, update_db=False):
-        LOG.info("Starting MySQL.")
+    def start_db(self, update_db=False, ds_version=None):
+        LOG.info("Starting %s MySQL.", ds_version)
+        if not ds_version:
+            docker_image = 'mysql:latest'
+        docker_image = 'mysql:%s' % ds_version
 
         try:
             root_pass = self.get_auth_password(file="root.cnf")
@@ -599,10 +601,10 @@ class BaseMySqlApp(object):
                 as_root=True)
 
         try:
-            LOG.info("Starting docker container, image: %s", self.docker_image)
+            LOG.info("Starting docker container, image: %s", docker_image)
             docker_util.start_container(
                 self.docker_client,
-                self.docker_image,
+                docker_image,
                 volumes={
                     "/etc/mysql": {"bind": "/etc/mysql", "mode": "rw"},
                     "/var/run/mysqld": {"bind": "/var/run/mysqld",
@@ -687,7 +689,8 @@ class BaseMySqlApp(object):
         self._reset_configuration(config_contents)
 
     def apply_overrides(self, overrides):
-        LOG.debug("Applying overrides to running MySQL.")
+        LOG.info("Applying overrides to running MySQL, overrides: %s",
+                 overrides)
         with mysql_util.SqlClient(self.get_engine()) as client:
             for k, v in overrides.items():
                 byte_value = guestagent_utils.to_bytes(v)

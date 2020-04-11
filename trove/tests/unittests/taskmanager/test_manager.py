@@ -248,16 +248,17 @@ class TestManager(trove_testtools.TestCase):
                     'temp-backup-id', None, 'password', None, mock_override,
                     None, None, None, None, 'affinity')
 
-        mock_tasks.create_instance.assert_called_with(mock_flavor,
-                                                      'mysql-image-id', None,
-                                                      None, 'mysql',
-                                                      'mysql-server', 2,
-                                                      'temp-backup-id', None,
-                                                      'password', None,
-                                                      mock_override,
-                                                      None, None, None, None,
-                                                      {'group': 'sg-id'},
-                                                      access=None)
+        mock_tasks.create_instance.assert_called_with(
+            mock_flavor,
+            'mysql-image-id', None,
+            None, 'mysql',
+            'mysql-server', 2,
+            'temp-backup-id', None,
+            'password', None,
+            mock_override,
+            None, None, None, None,
+            {'group': 'sg-id'},
+            access=None, ds_version=None)
         mock_tasks.wait_for_instance.assert_called_with(36000, mock_flavor)
 
     def test_create_cluster(self):

@@ -1279,7 +1279,8 @@ class Instance(BuiltInstance):
                 volume_size, backup_id, availability_zone, root_password,
                 nics, overrides, slave_of_id, cluster_config,
                 volume_type=volume_type, modules=module_list,
-                locality=locality, access=access)
+                locality=locality, access=access,
+                ds_version=datastore_version.name)
 
             return SimpleInstance(context, db_info, service_status,
                                   root_password, locality=locality)

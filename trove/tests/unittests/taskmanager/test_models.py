@@ -378,7 +378,7 @@ class FreshInstanceTasksTest(BaseFreshInstanceTasksTest):
         )
         mock_guest_prepare.assert_called_with(
             768, mock_build_volume_info(), 'mysql-server', None, None, None,
-            config_content, None, overrides, None, None, None
+            config_content, None, overrides, None, None, None, ds_version=None
         )
         mock_create_server.assert_called_with(
             8, 'mysql-image-id', 'mysql',
@@ -440,7 +440,7 @@ class FreshInstanceTasksTest(BaseFreshInstanceTasksTest):
         )
         mock_guest_prepare.assert_called_with(
             768, mock_build_volume_info(), 'mysql-server', None, None, None,
-            config_content, None, mock.ANY, None, None, None)
+            config_content, None, mock.ANY, None, None, None, ds_version=None)
         mock_create_server.assert_called_with(
             8, 'mysql-image-id', 'mysql',
             mock_build_volume_info()['block_device'], None,

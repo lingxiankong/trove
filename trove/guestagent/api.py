@@ -314,7 +314,7 @@ class API(object):
                 device_path='/dev/vdb', mount_point='/mnt/volume',
                 backup_info=None, config_contents=None, root_password=None,
                 overrides=None, cluster_config=None, snapshot=None,
-                modules=None):
+                modules=None, ds_version=None):
         """Make an asynchronous call to prepare the guest
            as a database container optionally includes a backup id for restores
         """
@@ -335,7 +335,8 @@ class API(object):
             device_path=device_path, mount_point=mount_point,
             backup_info=backup_info, config_contents=config_contents,
             root_password=root_password, overrides=overrides,
-            cluster_config=cluster_config, snapshot=snapshot, modules=modules)
+            cluster_config=cluster_config, snapshot=snapshot, modules=modules,
+            ds_version=ds_version)
 
     def _create_guest_queue(self):
         """Call to construct, start and immediately stop rpc server in order

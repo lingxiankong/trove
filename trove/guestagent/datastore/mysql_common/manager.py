@@ -88,7 +88,7 @@ class MySqlManager(manager.Manager):
     def do_prepare(self, context, packages, databases, memory_mb, users,
                    device_path, mount_point, backup_info,
                    config_contents, root_password, overrides,
-                   cluster_config, snapshot):
+                   cluster_config, snapshot, ds_version=None):
         """This is called from prepare in the base class."""
         if device_path:
             LOG.info('Preparing the storage for %s, mount path %s',
@@ -124,7 +124,7 @@ class MySqlManager(manager.Manager):
         if backup_info:
             self.perform_restore(context, mount_point + "/data", backup_info)
 
-        self.app.start_db()
+        self.app.start_db(ds_version=ds_version)
         self.app.secure()
 
         enable_remote_root = (backup_info and self.adm.is_root_enabled())

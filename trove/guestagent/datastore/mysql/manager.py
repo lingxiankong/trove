@@ -17,11 +17,9 @@ from trove.guestagent.datastore.mysql_common import manager
 
 
 class Manager(manager.MySqlManager):
-    docker_image = "mysql:5.7"
-
     def __init__(self):
         status = service.MySqlAppStatus(self.docker_client)
-        app = service.MySqlApp(status, self.docker_client, self.docker_image)
+        app = service.MySqlApp(status, self.docker_client)
         adm = service.MySqlAdmin(app)
 
         super(Manager, self).__init__(app, status, adm)

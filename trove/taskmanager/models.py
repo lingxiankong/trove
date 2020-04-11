@@ -537,7 +537,8 @@ class FreshInstanceTasks(FreshInstance, NotifyMixin, ConfigurationMixin):
                         datastore_manager, packages, volume_size,
                         backup_id, availability_zone, root_password, nics,
                         overrides, cluster_config, snapshot, volume_type,
-                        modules, scheduler_hints, access=None):
+                        modules, scheduler_hints, access=None,
+                        ds_version=None):
         """Create trove instance.
 
         It is the caller's responsibility to ensure that
@@ -577,7 +578,8 @@ class FreshInstanceTasks(FreshInstance, NotifyMixin, ConfigurationMixin):
                             packages, databases, users, backup_info,
                             config.config_contents, root_password,
                             overrides,
-                            cluster_config, snapshot, modules)
+                            cluster_config, snapshot, modules,
+                            ds_version=ds_version)
 
         if root_password:
             self.report_root_enabled()
@@ -981,7 +983,7 @@ class FreshInstanceTasks(FreshInstance, NotifyMixin, ConfigurationMixin):
                        packages, databases, users, backup_info=None,
                        config_contents=None, root_password=None,
                        overrides=None, cluster_config=None, snapshot=None,
-                       modules=None):
+                       modules=None, ds_version=None):
         LOG.debug("Entering guest_prepare")
         # Now wait for the response from the create to do additional work
         self.guest.prepare(flavor_ram, packages, databases, users,
@@ -992,7 +994,8 @@ class FreshInstanceTasks(FreshInstance, NotifyMixin, ConfigurationMixin):
                            root_password=root_password,
                            overrides=overrides,
                            cluster_config=cluster_config,
-                           snapshot=snapshot, modules=modules)
+                           snapshot=snapshot, modules=modules,
+                           ds_version=ds_version)
 
     def _create_dns_entry(self):
         dns_support = CONF.trove_dns_support
