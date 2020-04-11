@@ -13,15 +13,18 @@
 #    limitations under the License.
 
 import abc
+import re
 
 from oslo_log import log as logging
 from oslo_utils import encodeutils
+from oslo_utils import timeutils
 import six
 from six.moves import urllib
 import sqlalchemy
 from sqlalchemy import exc
 from sqlalchemy.sql.expression import text
 
+from trove.backup.state import BackupState
 from trove.common import cfg
 from trove.common import exception
 from trove.common import instance
@@ -30,6 +33,7 @@ from trove.common.configurations import MySQLConfParser
 from trove.common.db.mysql import models
 from trove.common.i18n import _
 from trove.common.stream_codecs import IniCodec
+from trove.conductor import api as conductor_api
 from trove.guestagent.common import guestagent_utils
 from trove.guestagent.common import operating_system
 from trove.guestagent.common import sql_query
@@ -54,6 +58,9 @@ MYSQL_CONFIG = "/etc/mysql/my.cnf"
 MYSQL_BIN_CANDIDATES = ["/usr/sbin/mysqld", "/usr/libexec/mysqld"]
 CNF_EXT = 'cnf'
 CNF_INCLUDE_DIR = '/etc/mysql/conf.d'
+
+BACKUP_LOG = re.compile(r'.*Backup successfully, checksum: (?P<checksum>.*), '
+                        r'location: (?P<location>.*)')
 
 
 class BaseMySqlAppStatus(service.BaseDbStatus):
@@ -735,6 +742,99 @@ class BaseMySqlApp(object):
             raise exception.TroveError("Failed to start mysql")
 
         LOG.info("Finished restarting mysql")
+
+    def create_backup(self, context, backup_info):
+        storage_driver = CONF.storage_strategy
+        backup_driver = cfg.get_configuration_property('backup_strategy')
+        incremental = ''
+        backup_type = 'full'
+        if backup_info.get('parent'):
+            incremental = (
+                f'--incremental '
+                f'--parent-location={backup_info["parent"]["location"]} '
+                f'--parent-checksum={backup_info["parent"]["checksum"]}')
+            backup_type = 'incremental'
+
+        backup_id = backup_info["id"]
+        image = 'openstacktrove/db-backup:mysql-5.7'
+        name = 'db_backup'
+        volumes = {'/var/lib/mysql': {'bind': '/var/lib/mysql', 'mode': 'rw'}}
+        admin_pass = self.get_auth_password()
+        user_token = context.auth_token
+        auth_url = CONF.service_credentials.auth_url
+        user_tenant = 'demo'
+        metadata = f'datastore:{backup_info["datastore"]},' \
+                   f'datastore_version:{backup_info["datastore_version"]}'
+
+        command = (
+            f'/usr/bin/python3 main.py --backup --backup-id={backup_id} '
+            f'--storage-driver={storage_driver} --driver={backup_driver} '
+            f'--db-user=os_admin --db-password={admin_pass} '
+            f'--db-host=127.0.0.1 '
+            f'--os-token={user_token} --os-auth-url={auth_url} '
+            f'--os-tenant={user_tenant} '
+            f'--swift-extra-metadata={metadata} '
+            f'{incremental}'
+        )
+
+        # Update backup status in db
+        conductor = conductor_api.API(context)
+        mount_point = CONF.get(CONF.datastore_manager).mount_point
+        stats = guestagent_utils.get_filesystem_volume_stats(mount_point)
+        backup_state = {
+            'backup_id': backup_id,
+            'size': stats.get('used', 0.0),
+            'state': BackupState.BUILDING,
+            'backup_type': backup_type
+        }
+        conductor.update_backup(CONF.guest_id,
+                                sent=timeutils.utcnow_ts(microsecond=True),
+                                **backup_state)
+        LOG.debug("Updated state for %s to %s.", backup_id, backup_state)
+
+        # Start to run backup inside a separate docker container
+        try:
+            LOG.info('Starting to create backup %s, command: %s', backup_id,
+                     command)
+            output, ret = docker_util.run_container(
+                self.docker_client, image, name,
+                volumes=volumes, command=command)
+            result = output[-1]
+            if not ret:
+                msg = f'Failed to run backup container, error: {result}'
+                LOG.error(msg)
+                raise Exception(msg)
+
+            backup_result = BACKUP_LOG.match(result)
+            if backup_result:
+                backup_state.update({
+                    'checksum': backup_result.group('checksum'),
+                    'location': backup_result.group('location'),
+                    'success': True,
+                    'state': BackupState.COMPLETED,
+                })
+            else:
+                backup_state.update({
+                    'success': False,
+                    'state': BackupState.FAILED,
+                })
+        except Exception as err:
+            LOG.error("Failed to create backup %s", backup_id)
+            backup_state.update({
+                'success': False,
+                'state': BackupState.FAILED,
+            })
+            raise exception.TroveError(
+                "Failed to create backup %s, error: %s" %
+                (backup_id, str(err))
+            )
+        finally:
+            LOG.info("Completed backup %s.", backup_id)
+            conductor.update_backup(CONF.guest_id,
+                                    sent=timeutils.utcnow_ts(
+                                        microsecond=True),
+                                    **backup_state)
+            LOG.debug("Updated state for %s to %s.", backup_id, backup_state)
 
 
 class BaseMySqlRootAccess(object):

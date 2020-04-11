@@ -11,13 +11,17 @@
 #    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
+import re
+
 import docker
 from oslo_log import log as logging
+from oslo_utils import encodeutils
 
 from trove.common import cfg
 
 LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
+ANSI_ESCAPE = re.compile(r'(?:\x1B[@-_]|[\x80-\x9F])[0-?]*[ -/]*[@-~]')
 
 
 def stop_container(client, name="database"):
@@ -70,6 +74,41 @@ def start_container(client, image, name="database",
         )
 
     return container
+
+
+def _decode_output(output):
+    output = encodeutils.safe_decode(output)
+    output = ANSI_ESCAPE.sub('', output.strip())
+    return output.split('\n')
+
+
+def run_container(client, image, name, network_mode="host", volumes={},
+                  command=""):
+    """Run command in a container and return the string output list.
+
+    :returns output: The log output.
+    :returns ret: True if no error occurs, otherwise False.
+    """
+    try:
+        container = client.containers.get(name)
+        container.remove(force=True)
+    except docker.errors.NotFound:
+        pass
+
+    try:
+        output = client.containers.run(
+            image,
+            name=name,
+            network_mode=network_mode,
+            volumes=volumes,
+            remove=False,
+            command=command,
+        )
+    except docker.errors.ContainerError as err:
+        output = err.container.logs()
+        return _decode_output(output), False
+
+    return _decode_output(output), True
 
 
 def get_container_status(client, name="database"):

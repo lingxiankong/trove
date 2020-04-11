@@ -36,7 +36,6 @@ from trove.guestagent.common import operating_system
 from trove.guestagent.common.operating_system import FileMode
 from trove.guestagent.module import driver_manager
 from trove.guestagent.module import module_manager
-from trove.guestagent.strategies import replication as repl_strategy
 
 LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
@@ -103,30 +102,6 @@ class Manager(periodic_task.PeriodicTasks):
     @prepare_error.setter
     def prepare_error(self, prepare_error):
         self.__prepare_error = prepare_error
-
-    @property
-    def replication(self):
-        """If the datastore supports replication, return an instance of
-        the strategy.
-        """
-        try:
-            return repl_strategy.get_instance(self.manager)
-        except Exception as ex:
-            LOG.warning("Cannot get replication instance for '%(manager)s': "
-                        "%(msg)s", {'manager': self.manager, 'msg': str(ex)})
-
-        return None
-
-    @property
-    def replication_strategy(self):
-        """If the datastore supports replication, return the strategy."""
-        try:
-            return repl_strategy.get_strategy(self.manager)
-        except Exception as ex:
-            LOG.debug("Cannot get replication strategy for '%(manager)s': "
-                      "%(msg)s", {'manager': self.manager, 'msg': str(ex)})
-
-        return None
 
     @property
     def configuration_manager(self):

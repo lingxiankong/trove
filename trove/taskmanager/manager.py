@@ -420,10 +420,14 @@ class Manager(periodic_task.PeriodicTasks):
                         root_password, nics, overrides, slave_of_id,
                         cluster_config, volume_type, modules, locality,
                         access=None, ds_version=None):
-        with EndNotification(context,
-                             instance_id=(instance_id[0]
-                                          if isinstance(instance_id, list)
-                                          else instance_id)):
+        with EndNotification(
+            context,
+            instance_id=(
+                instance_id[0]
+                if isinstance(instance_id, list)
+                else instance_id
+            )
+        ):
             self._create_instance(context, instance_id, name, flavor,
                                   image_id, databases, users,
                                   datastore_manager, packages, volume_size,

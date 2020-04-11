@@ -33,7 +33,7 @@ function build_guest_image() {
     fi
 
     # For system-wide installs, DIB will automatically find the elements, so we only check local path
-    if [ "${DIB_LOCAL_ELEMENTS_PATH}" ]; then
+    if [[ "${DIB_LOCAL_ELEMENTS_PATH}" ]]; then
         export ELEMENTS_PATH=${trove_elements_path}:${DIB_LOCAL_ELEMENTS_PATH}
     else
         export ELEMENTS_PATH=${trove_elements_path}

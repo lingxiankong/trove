@@ -23,7 +23,6 @@ from trove.common import configurations
 from trove.common import exception
 from trove.common import instance as rd_instance
 from trove.common.notification import EndNotification
-from trove.guestagent import backup
 from trove.guestagent import guest_log
 from trove.guestagent import volume
 from trove.guestagent.common import operating_system
@@ -72,18 +71,6 @@ class MySqlManager(manager.Manager):
 
     def is_root_enabled(self, context):
         return self.adm.is_root_enabled()
-
-    def perform_restore(self, context, restore_location, backup_info):
-        LOG.info("Restoring database from backup %s to %s, backup_info: %s",
-                 backup_info['id'], restore_location, backup_info)
-        try:
-            backup.restore(context, backup_info, restore_location)
-        except Exception:
-            LOG.exception("Error performing restore from backup %s.",
-                          backup_info['id'])
-            self.status.set_status(rd_instance.ServiceStatuses.FAILED)
-            raise
-        LOG.info("Restored database successfully.")
 
     def do_prepare(self, context, packages, databases, memory_mb, users,
                    device_path, mount_point, backup_info,
@@ -225,3 +212,17 @@ class MySqlManager(manager.Manager):
     def apply_overrides(self, context, overrides):
         LOG.debug("Applying overrides (%s).", overrides)
         self.app.apply_overrides(overrides)
+
+    def create_backup(self, context, backup_info):
+        """
+        Entry point for initiating a backup for this guest agents db instance.
+        The call currently blocks until the backup is complete or errors. If
+        device_path is specified, it will be mounted based to a point specified
+        in configuration.
+
+        :param context: User context object.
+        :param backup_info: a dictionary containing the db instance id of the
+                            backup task, location, type, and other data.
+        """
+        with EndNotification(context):
+            self.app.create_backup(context, backup_info)

@@ -34,6 +34,14 @@ CONF.register_opts([openstack_cfg.StrOpt('guest_id', default=None,
 
 
 def main():
+    log_levels = [
+        'docker=WARN',
+    ]
+    default_log_levels = logging.get_default_log_levels()
+    default_log_levels.extend(log_levels)
+    logging.set_defaults(default_log_levels=default_log_levels)
+    logging.register_options(CONF)
+
     cfg.parse_args(sys.argv)
     logging.setup(CONF, None)
     debug_utils.setup()
