@@ -27,17 +27,17 @@ LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
 
 
-def _get_user_keystone_session(auth_url, token, tenant):
+def _get_user_keystone_session(auth_url, token, tenant_id):
     auth = v3.Token(
         auth_url=auth_url, token=token,
         project_domain_name="Default",
-        project_name=tenant
+        project_id=tenant_id
     )
     return session.Session(auth=auth, verify=False)
 
 
-def _get_service_client(auth_url, token, tenant):
-    sess = _get_user_keystone_session(auth_url, token, tenant)
+def _get_service_client(auth_url, token, tenant_id):
+    sess = _get_user_keystone_session(auth_url, token, tenant_id)
     return swiftclient.Connection(session=sess)
 
 
@@ -111,7 +111,7 @@ class StreamReader(object):
 class SwiftStorage(base.Storage):
     def __init__(self):
         self.client = _get_service_client(CONF.os_auth_url, CONF.os_token,
-                                          CONF.os_tenant)
+                                          CONF.os_tenant_id)
 
     def save(self, stream, metadata=None, container='database_backups'):
         """Persist data from the stream to swift.

@@ -45,7 +45,7 @@ cli_opts = [
     cfg.StrOpt('db-host'),
     cfg.StrOpt('os-token'),
     cfg.StrOpt('os-auth-url'),
-    cfg.StrOpt('os-tenant'),
+    cfg.StrOpt('os-tenant-id'),
     cfg.StrOpt('swift-container', default='database_backups'),
     cfg.DictOpt('swift-extra-metadata'),
     cfg.StrOpt('restore-from'),

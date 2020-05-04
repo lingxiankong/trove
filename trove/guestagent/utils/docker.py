@@ -136,3 +136,11 @@ def run_command(client, command, name="database"):
 def restart_container(client, name="database"):
     container = client.containers.get(name)
     container.restart(timeout=CONF.state_change_wait_time)
+
+
+def remove_container(client, name="database"):
+    try:
+        container = client.containers.get(name)
+        container.remove(force=True)
+    except docker.errors.NotFound:
+        pass

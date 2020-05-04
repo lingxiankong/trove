@@ -586,11 +586,16 @@ class BaseMySqlApp(object):
             self.configuration_manager.apply_user_override(
                 {MySQLConfParser.SERVER_CONF_SECTION: overrides})
 
-    def start_db(self, update_db=False, ds_version=None):
+    def start_db(self, update_db=False, ds_version=None, command=None,
+                 extra_volumes=None):
         LOG.info("Starting %s MySQL.", ds_version)
         if not ds_version:
             docker_image = 'mysql:latest'
         docker_image = 'mysql:%s' % ds_version
+
+        # Cinder volume initialization(after formatted) may leave a
+        # lost+found folder
+        command = command if command else '--ignore-db-dir lost+found'
 
         try:
             root_pass = self.get_auth_password(file="root.cnf")
@@ -607,25 +612,27 @@ class BaseMySqlApp(object):
                 group=CONF.database_service_uid, force=True,
                 as_root=True)
 
+        volumes = {
+            "/etc/mysql": {"bind": "/etc/mysql", "mode": "rw"},
+            "/var/run/mysqld": {"bind": "/var/run/mysqld",
+                                "mode": "rw"},
+            "/var/lib/mysql": {"bind": "/var/lib/mysql", "mode": "rw"},
+        }
+        if extra_volumes:
+            volumes.update(extra_volumes)
+
         try:
             LOG.info("Starting docker container, image: %s", docker_image)
             docker_util.start_container(
                 self.docker_client,
                 docker_image,
-                volumes={
-                    "/etc/mysql": {"bind": "/etc/mysql", "mode": "rw"},
-                    "/var/run/mysqld": {"bind": "/var/run/mysqld",
-                                        "mode": "rw"},
-                    "/var/lib/mysql": {"bind": "/var/lib/mysql", "mode": "rw"},
-                },
+                volumes=volumes,
                 network_mode="host",
                 user=user,
                 environment={
                     "MYSQL_ROOT_PASSWORD": root_pass,
                 },
-                # Cinder volume initialization(after formatted) may leave a
-                # lost+found folder
-                command="--ignore-db-dir lost+found"
+                command=command
             )
 
             # Save root password
@@ -762,7 +769,7 @@ class BaseMySqlApp(object):
         admin_pass = self.get_auth_password()
         user_token = context.auth_token
         auth_url = CONF.service_credentials.auth_url
-        user_tenant = 'demo'
+        user_tenant = context.project_id
         metadata = f'datastore:{backup_info["datastore"]},' \
                    f'datastore_version:{backup_info["datastore_version"]}'
 
@@ -772,7 +779,7 @@ class BaseMySqlApp(object):
             f'--db-user=os_admin --db-password={admin_pass} '
             f'--db-host=127.0.0.1 '
             f'--os-token={user_token} --os-auth-url={auth_url} '
-            f'--os-tenant={user_tenant} '
+            f'--os-tenant-id={user_tenant} '
             f'--swift-extra-metadata={metadata} '
             f'{incremental}'
         )
@@ -835,6 +842,53 @@ class BaseMySqlApp(object):
                                         microsecond=True),
                                     **backup_state)
             LOG.debug("Updated state for %s to %s.", backup_id, backup_state)
+
+    def restore_backup(self, context, backup_info, restore_location):
+        backup_id = backup_info['id']
+        storage_driver = CONF.storage_strategy
+        backup_driver = cfg.get_configuration_property('backup_strategy')
+        user_token = context.auth_token
+        auth_url = CONF.service_credentials.auth_url
+        user_tenant = context.project_id
+        image = 'openstacktrove/db-backup:mysql-5.7'
+        name = 'db_restore'
+        volumes = {'/var/lib/mysql': {'bind': '/var/lib/mysql', 'mode': 'rw'}}
+
+        command = (
+            f'/usr/bin/python3 main.py --nobackup '
+            f'--storage-driver={storage_driver} --driver={backup_driver} '
+            f'--os-token={user_token} --os-auth-url={auth_url} '
+            f'--os-tenant-id={user_tenant} '
+            f'--restore-from={backup_info["location"]} '
+            f'--restore-checksum={backup_info["checksum"]}'
+        )
+
+        LOG.debug('Stop the database and clean up the data before restore '
+                  'from %s', backup_id)
+        self.stop_db()
+        operating_system.chmod(restore_location,
+                               operating_system.FileMode.SET_FULL,
+                               as_root=True)
+        utils.clean_out(restore_location)
+
+        # Start to run restore inside a separate docker container
+        LOG.info('Starting to restore backup %s, command: %s', backup_id,
+                 command)
+        output, ret = docker_util.run_container(
+            self.docker_client, image, name,
+            volumes=volumes, command=command)
+        result = output[-1]
+        if not ret:
+            msg = f'Failed to run restore container, error: {result}'
+            LOG.error(msg)
+            raise Exception(msg)
+
+        LOG.debug('Deleting ib_logfile files after restore from backup %s',
+                  backup_id)
+        operating_system.chown(restore_location, CONF.database_service_uid,
+                               CONF.database_service_uid, force=True,
+                               as_root=True)
+        self.wipe_ib_logfiles()
 
 
 class BaseMySqlRootAccess(object):

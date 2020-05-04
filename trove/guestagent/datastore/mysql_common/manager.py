@@ -15,6 +15,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 #
+import tempfile
 
 from oslo_log import log as logging
 
@@ -22,11 +23,13 @@ from trove.common import cfg
 from trove.common import configurations
 from trove.common import exception
 from trove.common import instance as rd_instance
+from trove.common import utils
 from trove.common.notification import EndNotification
 from trove.guestagent import guest_log
 from trove.guestagent import volume
 from trove.guestagent.common import operating_system
 from trove.guestagent.datastore import manager
+from trove.guestagent.utils import docker as docker_util
 from trove.guestagent.utils import mysql as mysql_util
 
 LOG = logging.getLogger(__name__)
@@ -77,6 +80,7 @@ class MySqlManager(manager.Manager):
                    config_contents, root_password, overrides,
                    cluster_config, snapshot, ds_version=None):
         """This is called from prepare in the base class."""
+        data_dir = mount_point + '/data'
         if device_path:
             LOG.info('Preparing the storage for %s, mount path %s',
                      device_path, mount_point)
@@ -97,11 +101,11 @@ class MySqlManager(manager.Manager):
                                    CONF.database_service_uid,
                                    recursive=False, as_root=True)
 
-            # We need to temporarily update the default my.cnf so that
-            # mysql will start after the volume is mounted. Later on it
-            # will be changed based on the config template
-            # (see MySqlApp.secure()) and restart.
-            self.app.set_data_dir(mount_point + '/data')
+            operating_system.create_directory(data_dir,
+                                              user=CONF.database_service_uid,
+                                              group=CONF.database_service_uid,
+                                              as_root=True)
+            self.app.set_data_dir(data_dir)
 
         LOG.info('Preparing database configuration')
         self.app.configuration_manager.save_configuration(config_contents)
@@ -109,7 +113,8 @@ class MySqlManager(manager.Manager):
 
         # Restore from backup
         if backup_info:
-            self.perform_restore(context, mount_point + "/data", backup_info)
+            self.perform_restore(context, data_dir, backup_info)
+            self.reset_password_for_restore(ds_version=ds_version)
 
         self.app.start_db(ds_version=ds_version)
         self.app.secure()
@@ -226,3 +231,57 @@ class MySqlManager(manager.Manager):
         """
         with EndNotification(context):
             self.app.create_backup(context, backup_info)
+
+    def perform_restore(self, context, restore_location, backup_info):
+        LOG.info("Starting to restore database from backup %s, "
+                 "backup_info: %s", backup_info['id'], backup_info)
+
+        try:
+            self.app.restore_backup(context, backup_info, restore_location)
+        except Exception:
+            LOG.error("Failed to restore from backup %s.", backup_info['id'])
+            self.status.set_status(rd_instance.ServiceStatuses.FAILED)
+            raise
+
+        LOG.info("Finished restore data from backup %s", backup_info['id'])
+
+    def reset_password_for_restore(self, ds_version=None):
+        """Reset the root password after restore the db data.
+
+        We create a temporary database container by running mysqld_safe to
+        reset the root password.
+        """
+        LOG.info('Starting to reset password for restore')
+
+        try:
+            root_pass = self.app.get_auth_password(file="root.cnf")
+        except exception.UnprocessableEntity:
+            root_pass = utils.generate_random_password()
+            self.app.save_password('root', root_pass)
+
+        with tempfile.NamedTemporaryFile(mode='w') as init_file, \
+            tempfile.NamedTemporaryFile(suffix='.err') as err_file:
+            operating_system.write_file(
+                init_file.name,
+                f"SET PASSWORD FOR 'root'@'localhost'='{root_pass}';"
+            )
+            command = (
+                f'mysqld_safe --init-file={init_file.name} '
+                f'--log-error={err_file.name}'
+            )
+            extra_volumes = {
+                init_file.name: {"bind": init_file.name, "mode": "rw"},
+                err_file.name: {"bind": err_file.name, "mode": "rw"},
+            }
+
+            try:
+                self.app.start_db(ds_version=ds_version, command=command,
+                                  extra_volumes=extra_volumes)
+            except Exception as err:
+                LOG.error('Failed to reset password for restore, error: %s',
+                          str(err))
+                raise err
+            finally:
+                docker_util.remove_container(self.app.docker_client)
+
+        LOG.info('Finished to reset password for restore')
