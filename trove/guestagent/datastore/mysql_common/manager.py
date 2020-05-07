@@ -215,8 +215,13 @@ class MySqlManager(manager.Manager):
         }
 
     def apply_overrides(self, context, overrides):
-        LOG.debug("Applying overrides (%s).", overrides)
+        LOG.info("Applying overrides (%s).", overrides)
         self.app.apply_overrides(overrides)
+
+    def update_overrides(self, context, overrides, remove=False):
+        if remove:
+            self.app.remove_overrides()
+        self.app.update_overrides(overrides)
 
     def create_backup(self, context, backup_info):
         """

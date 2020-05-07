@@ -586,6 +586,24 @@ class BaseMySqlApp(object):
             self.configuration_manager.apply_user_override(
                 {MySQLConfParser.SERVER_CONF_SECTION: overrides})
 
+    def remove_overrides(self):
+        self.configuration_manager.remove_user_override()
+
+    def apply_overrides(self, overrides):
+        LOG.info("Applying overrides to running MySQL, overrides: %s",
+                 overrides)
+        with mysql_util.SqlClient(self.get_engine()) as client:
+            for k, v in overrides.items():
+                byte_value = guestagent_utils.to_bytes(v)
+                q = sql_query.SetServerVariable(key=k, value=byte_value)
+                t = text(str(q))
+                try:
+                    client.execute(t)
+                except exc.OperationalError:
+                    output = {'key': k, 'value': byte_value}
+                    LOG.error("Unable to set %(key)s with value %(value)s.",
+                              output)
+
     def start_db(self, update_db=False, ds_version=None, command=None,
                  extra_volumes=None):
         LOG.info("Starting %s MySQL.", ds_version)
@@ -701,21 +719,6 @@ class BaseMySqlApp(object):
         config_contents = configuration['config_contents']
         LOG.info("Resetting configuration.")
         self._reset_configuration(config_contents)
-
-    def apply_overrides(self, overrides):
-        LOG.info("Applying overrides to running MySQL, overrides: %s",
-                 overrides)
-        with mysql_util.SqlClient(self.get_engine()) as client:
-            for k, v in overrides.items():
-                byte_value = guestagent_utils.to_bytes(v)
-                q = sql_query.SetServerVariable(key=k, value=byte_value)
-                t = text(str(q))
-                try:
-                    client.execute(t)
-                except exc.OperationalError:
-                    output = {'key': k, 'value': byte_value}
-                    LOG.exception("Unable to set %(key)s with value "
-                                  "%(value)s.", output)
 
     def reset_admin_password(self, admin_password):
         """Replace the password in the my.cnf file."""

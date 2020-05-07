@@ -1496,10 +1496,10 @@ class Instance(BuiltInstance):
                                                  status=status)
 
     def attach_configuration(self, configuration_id):
-        LOG.debug("Attaching configuration to instance: %s", self.id)
+        LOG.info("Attaching configuration %s to instance: %s",
+                 configuration_id, self.id)
         if not self.db_info.configuration_id:
             self._validate_can_perform_assign()
-            LOG.debug("Attaching configuration: %s", configuration_id)
             config = Configuration.find(self.context, configuration_id,
                                         self.db_info.datastore_version_id)
             self.update_configuration(config)
@@ -1519,7 +1519,8 @@ class Instance(BuiltInstance):
         to RESTART_REQUIRED.
         """
 
-        LOG.debug("Saving configuration on instance: %s", self.id)
+        LOG.info("Saving configuration %s on instance: %s",
+                 configuration.configuration_id, self.id)
         overrides = configuration.get_configuration_overrides()
 
         # Always put the instance into RESTART_REQUIRED state after
@@ -1543,8 +1544,8 @@ class Instance(BuiltInstance):
         Apply changes only if ALL values can be applied at once.
         Return True if the configuration has changed.
         """
-
-        LOG.debug("Applying configuration on instance: %s", self.id)
+        LOG.info("Applying configuration %s on instance: %s",
+                 configuration.configuration_id, self.id)
         overrides = configuration.get_configuration_overrides()
 
         if not configuration.does_configuration_need_restart():
