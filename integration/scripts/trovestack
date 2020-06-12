@@ -742,7 +742,7 @@ function cmd_build_image() {
             image_name="${image_name}-dev"
         fi
         image_folder=$HOME/images
-        output="${image_folder}/${image_name}.qcow2"
+        output="${image_folder}/${image_name}.raw"
     fi
 
     # Always rebuild the image.
