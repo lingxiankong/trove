@@ -63,7 +63,7 @@ class DBCapabilityOverrides(dbmodels.DatabaseModelBase):
 
 class DBDatastoreVersion(dbmodels.DatabaseModelBase):
     _data_fields = ['datastore_id', 'name', 'image_id', 'image_tags',
-                    'packages', 'active', 'manager']
+                    'packages', 'active', 'manager', 'version']
     _table_name = 'datastore_versions'
 
 
@@ -399,15 +399,17 @@ class DatastoreVersion(object):
         return "%s(%s)" % (self.name, self.id)
 
     @classmethod
-    def load(cls, datastore, id_or_name):
+    def load(cls, datastore, id_or_name, version=None):
         try:
             return cls(DBDatastoreVersion.find_by(datastore_id=datastore.id,
                                                   id=id_or_name))
         except exception.ModelNotFoundError:
+            version = version or id_or_name
             versions = DBDatastoreVersion.find_all(datastore_id=datastore.id,
-                                                   name=id_or_name)
+                                                   name=id_or_name,
+                                                   version=version)
             if versions.count() == 0:
-                raise exception.DatastoreVersionNotFound(version=id_or_name)
+                raise exception.DatastoreVersionNotFound(version=version)
             if versions.count() > 1:
                 raise exception.NoUniqueMatch(name=id_or_name)
             return cls(versions.first())
@@ -473,6 +475,10 @@ class DatastoreVersion(object):
             self._capabilities = Capabilities.load(self.db_info.id)
 
         return self._capabilities
+
+    @property
+    def version(self):
+        return self.db_info.version
 
 
 class DatastoreVersions(object):
@@ -581,26 +587,28 @@ def update_datastore(name, default_version):
 
 
 def update_datastore_version(datastore, name, manager, image_id, image_tags,
-                             packages, active):
+                             packages, active, version=None):
+    version = version or name
     db_api.configure_db(CONF)
     datastore = Datastore.load(datastore)
     try:
-        version = DBDatastoreVersion.find_by(datastore_id=datastore.id,
-                                             name=name)
+        ds_version = DBDatastoreVersion.find_by(datastore_id=datastore.id,
+                                                version=version)
     except exception.ModelNotFoundError:
         # Create a new one
-        version = DBDatastoreVersion()
-        version.id = utils.generate_uuid()
-        version.name = name
-        version.datastore_id = datastore.id
-    version.manager = manager
-    version.image_id = image_id
-    version.image_tags = (",".join(image_tags)
-                          if type(image_tags) is list else image_tags)
-    version.packages = packages
-    version.active = active
+        ds_version = DBDatastoreVersion()
+        ds_version.id = utils.generate_uuid()
+        ds_version.name = name
+        ds_version.version = version
+        ds_version.datastore_id = datastore.id
+    ds_version.manager = manager
+    ds_version.image_id = image_id
+    ds_version.image_tags = (",".join(image_tags)
+                             if type(image_tags) is list else image_tags)
+    ds_version.packages = packages
+    ds_version.active = active
 
-    db_api.save(version)
+    db_api.save(ds_version)
 
 
 class DatastoreVersionMetadata(object):
